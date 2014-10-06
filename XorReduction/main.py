@@ -19,12 +19,75 @@ import ast
 
 from collections import namedtuple
 
+class PointsLoop(CtreeNode):
+    _fields = ['target', 'iter_target', 'body']
+
+    def __init__(self, target, iter_target, body):
+        self.target = target
+        self.iter_target = iter_target
+        self.body = body
+        #super(PointsLoop, self).__init__()
+
+    def label(self):
+        return str(self.iter_target)
+
 class XorReductionFrontend(PyBasicConversions):
-    pass
+    def visit_For(self, node):
+        if isinstance(node.iter, ast.Call) and \
+            isinstance(node.iter.func, ast.Attribute) and \
+            node.iter.func.attr is 'points' and \
+            node.iter.func.value.id is 'self':
+            target = node.target.id
+            iter_target = node.iter.args[0].id
+            body = [self.visit(statement) for statement in node.body]
+            return PointsLoop(target, iter_target, body)
+        else:
+            return node
+
+class XorReductionCBackend(ast.NodeTransformer):
+    def __init__(self, arg_cfg):
+        self.arg_cfg = arg_cfg
+        self.retval = None
+
+    def visit_FunctionDecl(self, node):
+        arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim, self.arg_cfg.shape)
+        param = node.params[1]
+        param.type = arg_type()
+        node.params = [param]
+        retval = SymbolRef("output", arg_type())
+        self.retval = "output"
+        node.params.append(retval)
+        node.defn = list(map(self.visit, node.defn))
+        node.defn[0].left.type = arg_type._dtype_.type()
+        return node
+
+    def visit_PointsLoop(self, node):
+        target = node.target
+        return For(
+            Assign(SymbolRef(target, ct.c_int()), Constant(0)),
+            Lt(SymbolRef(target), Constant(self.arg_cfg.size)),
+            PostInc(SymbolRef(target)),
+            list(map(self.visit, node.body))
+        )
+
+    def visit_Return(self, node):
+        return Assign(Deref(SymbolRef(self.retval)), node.value)
+
+
+class ConcreteXorReduction(ConcreteSpecializedFunction):
+    def finalize(self, entry_name, tree, entry_type):
+        self._c_function = self._compile(entry_name, tree, entry_type)
+        return self
+
+    def __call__(self, inpt):
+        output = ct.c_int()
+        self._c_function(inpt, ct.byref(output))
+        return output.value
+
 
 class Slimmy(LazySpecializedFunction):
 
-    subconfig_type = namedtuple('subconfig',['dtype','ndim','shape','flags'])
+    subconfig_type = namedtuple('subconfig',['dtype','ndim','shape','size','flags'])
 
     def __init__(self, py_ast = None):
         py_ast = py_ast or get_ast(self.kernel)
@@ -32,16 +95,18 @@ class Slimmy(LazySpecializedFunction):
 
     def args_to_subconfig(self, args):
         A = args[0]
-        return Slimmy.subconfig_type(A.dtype, A.ndim, A.shape,[])
+        return Slimmy.subconfig_type(A.dtype, A.ndim, A.shape,A.size, [])
 
 
     def transform(self, tree, program_config):
-        browser_show_ast(tree,'tmp.png')
+        #browser_show_ast(tree,'tree_init.png')
         arg_cfg, tune_cfg = program_config
         tree = XorReductionFrontend().visit(tree)
+        #browser_show_ast(tree, 'tree_post_frontend.png')
         tree = XorReductionCBackend(arg_cfg).visit(tree)
+        #browser_show_ast(tree, 'tree_post_backend.png')
         fn = ConcreteXorReduction()
-        arg_type = np.ctypeslib.ndpointer(*arg_cfg)
+        arg_type = np.ctypeslib.ndpointer(arg_cfg.dtype, arg_cfg.ndim, arg_cfg.shape, arg_cfg.flags)
         print(tree.files[0])
         return fn.finalize('kernel',
                            tree,
@@ -49,7 +114,7 @@ class Slimmy(LazySpecializedFunction):
                            )
 
     def points(self, inpt):
-        return np.nditer(inpt, flags=['c_index'])
+        return np.nditer(inpt)
 
 class XorReduction(Slimmy):
     def kernel(self, inpt):
@@ -59,13 +124,14 @@ class XorReduction(Slimmy):
         '''
         result = 0
         for point in self.points(inpt):
-            result ^= point
+            result = point ^ result
         return result
 
 
 
 if __name__ == '__main__':
     XorReducer = XorReduction()
-    arr = (np.random.rand(1024*1024)*100).astype(np.int32)
+    arr = np.array([0b1100,0b1001])
+    print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
     print(XorReducer(arr))
 
