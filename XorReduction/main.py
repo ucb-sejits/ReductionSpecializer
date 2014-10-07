@@ -50,13 +50,23 @@ class XorReductionCBackend(ast.NodeTransformer):
         self.retval = None
 
     def visit_FunctionDecl(self, node):
-        arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim, self.arg_cfg.shape)
-        param = node.params[1]
-        param.type = arg_type()
-        node.params = [param]
-        retval = SymbolRef("output", arg_type())
-        self.retval = "output"
-        node.params.append(retval)
+
+        # what happens if you have multiple args?
+        arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim, self.arg_cfg.shape)  # arg_type is the c-type of the input (like int *)
+
+        # Get the actual params
+        param = node.params[1]                                      # note that params[0] is self
+        param.type = arg_type()                                     # because logic
+        node.params = [param]                                       # this basically strips out "self"
+
+        ## Alternative to above code
+        # node.params[1].type = argtype()
+        # node.params = node.params[1:]
+
+        ## Adding the 'output' variable as one of the parameters of type argtype
+        retval = SymbolRef("output", arg_type())                    # retval is the "output" of type argtype
+        self.retval = "output"                                      # "output" is the name of 
+        node.params.append(retval)                                  # this appends the output parameter to the list of parameters
         node.defn = list(map(self.visit, node.defn))
         node.defn[0].left.type = arg_type._dtype_.type()
         return node
@@ -82,10 +92,11 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
     def __call__(self, inpt):
         output = ct.c_int()
         self._c_function(inpt, ct.byref(output))
-        return output.value
+        return output.value    
+    
 
 
-class Slimmy(LazySpecializedFunction):
+class LazySlimmy(LazySpecializedFunction):
 
     subconfig_type = namedtuple('subconfig',['dtype','ndim','shape','size','flags'])
 
@@ -94,8 +105,9 @@ class Slimmy(LazySpecializedFunction):
         super(Slimmy, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
+        # what happens if you have more than one arg?
         A = args[0]
-        return Slimmy.subconfig_type(A.dtype, A.ndim, A.shape,A.size, [])
+        return Slimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
 
 
     def transform(self, tree, program_config):
@@ -116,7 +128,10 @@ class Slimmy(LazySpecializedFunction):
     def points(self, inpt):
         return np.nditer(inpt)
 
-class XorReduction(Slimmy):
+
+
+
+class XorReduction(LazySlimmy):
     def kernel(self, inpt):
         '''
             Calculates the cumulative XOR of elements in inpt, equivalent to
