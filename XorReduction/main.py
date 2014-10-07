@@ -54,34 +54,38 @@ class XorReductionCBackend(ast.NodeTransformer):
         # what happens if you have multiple args?
         arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim, self.arg_cfg.shape)  # arg_type is the c-type of the input (like int *)
 
-        # Get the actual params
+        # TODO: stripping out self, as is done above, should really be abstracted, as it's the same everywhere
+        # Get the actual params (stripping out "self" from node.params)
         param = node.params[1]                                      # note that params[0] is self
         param.type = arg_type()                                     # because logic
         node.params = [param]                                       # this basically strips out "self"
 
-        ## Alternative to above code
+        ## Alternative to above code; stripping out "self" from node.params
         # node.params[1].type = argtype()
         # node.params = node.params[1:]
 
+        # TODO: below, 'output' should really be (int *) hardcoded, rather than the same 
+        #       as the input type (which is represented by argtype)
         ## Adding the 'output' variable as one of the parameters of type argtype
-        retval = SymbolRef("output", arg_type())                    # retval is the "output" of type argtype
-        self.retval = "output"                                      # "output" is the name of 
-        node.params.append(retval)                                  # this appends the output parameter to the list of parameters
-        node.defn = list(map(self.visit, node.defn))
+        retval = SymbolRef("output", arg_type())                # retval is a symbol reference to c-variable named "output" of type argtype
+        self.retval = "output"                                  # 'output' is the name of 
+        node.params.append(retval)                              # this appends the output parameter to the list of parameters
+        node.defn = list(map(self.visit, node.defn))            # UNDERSTAND TODO: what does this do?
         node.defn[0].left.type = arg_type._dtype_.type()
         return node
 
     def visit_PointsLoop(self, node):
         target = node.target
         return For(
-            Assign(SymbolRef(target, ct.c_int()), Constant(0)),
-            Lt(SymbolRef(target), Constant(self.arg_cfg.size)),
-            PostInc(SymbolRef(target)),
-            list(map(self.visit, node.body))
+            # TODO: Not sustainable... what happens i starts at 1?
+            Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;  
+            Lt(SymbolRef(target), Constant(self.arg_cfg.size)),   # 'Lt' = Less than; i < size of array
+            PostInc(SymbolRef(target)),                           # i++
+            list(map(self.visit, node.body))                      # UNDERSTAND TODO: what does this do?
         )
 
     def visit_Return(self, node):
-        return Assign(Deref(SymbolRef(self.retval)), node.value)
+        return Assign(Deref(SymbolRef(self.retval)), node.value)  # *output = <return value>
 
 
 class ConcreteXorReduction(ConcreteSpecializedFunction):
