@@ -64,11 +64,11 @@ class XorReductionCBackend(ast.NodeTransformer):
         # node.params[1].type = argtype()
         # node.params = node.params[1:]
 
-        # TODO: below, 'output' should really be (int *) hardcoded, rather than the same 
+        # TODO: below, 'output' should really be (int *) hardcoded, rather than the same
         #       as the input type (which is represented by argtype)
         ## Adding the 'output' variable as one of the parameters of type argtype
         retval = SymbolRef("output", arg_type())                # retval is a symbol reference to c-variable named "output" of type argtype
-        self.retval = "output"                                  # 'output' is the name of 
+        self.retval = "output"                                  # 'output' is the name of
         node.params.append(retval)                              # this appends the output parameter to the list of parameters
         node.defn = list(map(self.visit, node.defn))            # UNDERSTAND TODO: what does this do?
         node.defn[0].left.type = arg_type._dtype_.type()
@@ -78,7 +78,7 @@ class XorReductionCBackend(ast.NodeTransformer):
         target = node.target
         return For(
             # TODO: Not sustainable... what happens i starts at 1?
-            Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;  
+            Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;
             Lt(SymbolRef(target), Constant(self.arg_cfg.size)),   # 'Lt' = Less than; i < size of array
             PostInc(SymbolRef(target)),                           # i++
             list(map(self.visit, node.body))                      # UNDERSTAND TODO: what does this do?
@@ -96,8 +96,8 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
     def __call__(self, inpt):
         output = ct.c_int()
         self._c_function(inpt, ct.byref(output))
-        return output.value    
-    
+        return output.value
+
 
 
 class LazySlimmy(LazySpecializedFunction):
@@ -130,7 +130,13 @@ class LazySlimmy(LazySpecializedFunction):
                            )
 
     def points(self, inpt):
-        return np.nditer(inpt)
+        # return np.nditer(inpt)
+
+        # Mihir's Possible Fix... no idea of knowing
+        iter = np.nditer(input, flags=['c_index'])
+        while not iter.finished:
+            yield iter.index
+            iter.iternext()
 
 
 
@@ -153,4 +159,3 @@ if __name__ == '__main__':
     arr = np.array([0b1100,0b1001])
     print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
     print(XorReducer(arr))
-
