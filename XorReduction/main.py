@@ -106,21 +106,21 @@ class LazySlimmy(LazySpecializedFunction):
 
     def __init__(self, py_ast = None):
         py_ast = py_ast or get_ast(self.kernel)
-        super(Slimmy, self).__init__(py_ast)
+        super(LazySlimmy, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
         # what happens if you have more than one arg?
         A = args[0]
-        return Slimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
+        return LazySlimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
 
 
     def transform(self, tree, program_config):
-        #browser_show_ast(tree,'tree_init.png')
+        browser_show_ast(tree,'tree_init.png')
         arg_cfg, tune_cfg = program_config
         tree = XorReductionFrontend().visit(tree)
         #browser_show_ast(tree, 'tree_post_frontend.png')
         tree = XorReductionCBackend(arg_cfg).visit(tree)
-        #browser_show_ast(tree, 'tree_post_backend.png')
+        browser_show_ast(tree, 'tree_post_backend.png')
         fn = ConcreteXorReduction()
         arg_type = np.ctypeslib.ndpointer(arg_cfg.dtype, arg_cfg.ndim, arg_cfg.shape, arg_cfg.flags)
         print(tree.files[0])
@@ -149,7 +149,7 @@ class XorReduction(LazySlimmy):
         '''
         result = 0
         for point in self.points(inpt):
-            result = point ^ result
+            result = inpt[point] ^ result
         return result
 
 
