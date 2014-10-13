@@ -70,7 +70,7 @@ class XorReductionCBackend(ast.NodeTransformer):
         retval = SymbolRef("output", arg_type())                # retval is a symbol reference to c-variable named "output" of type argtype
         self.retval = "output"                                  # 'output' is the name of
         node.params.append(retval)                              # this appends the output parameter to the list of parameters
-        node.defn = list(map(self.visit, node.defn))            # UNDERSTAND TODO: what does this do?
+        node.defn = list(map(self.visit, node.defn))
         node.defn[0].left.type = arg_type._dtype_.type()
         return node
 
@@ -81,7 +81,7 @@ class XorReductionCBackend(ast.NodeTransformer):
             Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;
             Lt(SymbolRef(target), Constant(self.arg_cfg.size)),   # 'Lt' = Less than; i < size of array
             PostInc(SymbolRef(target)),                           # i++
-            list(map(self.visit, node.body))                      # UNDERSTAND TODO: what does this do?
+            list(map(self.visit, node.body))                      # Recursively call the other nodes
         )
 
     def visit_Return(self, node):
