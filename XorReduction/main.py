@@ -64,13 +64,13 @@ class XorReductionCBackend(ast.NodeTransformer):
         # node.params[1].type = argtype()
         # node.params = node.params[1:]
 
-        # TODO: below, 'output' should really be (int *) hardcoded, rather than the same 
+        # TODO: below, 'output' should really be (int *) hardcoded, rather than the same
         #       as the input type (which is represented by argtype)
         ## Adding the 'output' variable as one of the parameters of type argtype
         retval = SymbolRef("output", arg_type())                # retval is a symbol reference to c-variable named "output" of type argtype
-        self.retval = "output"                                  # 'output' is the name of 
+        self.retval = "output"                                  # 'output' is the name of
         node.params.append(retval)                              # this appends the output parameter to the list of parameters
-        node.defn = list(map(self.visit, node.defn))            # UNDERSTAND TODO: what does this do?
+        node.defn = list(map(self.visit, node.defn))
         node.defn[0].left.type = arg_type._dtype_.type()
         return node
 
@@ -78,10 +78,10 @@ class XorReductionCBackend(ast.NodeTransformer):
         target = node.target
         return For(
             # TODO: Not sustainable... what happens i starts at 1?
-            Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;  
+            Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;
             Lt(SymbolRef(target), Constant(self.arg_cfg.size)),   # 'Lt' = Less than; i < size of array
             PostInc(SymbolRef(target)),                           # i++
-            list(map(self.visit, node.body))                      # UNDERSTAND TODO: what does this do?
+            list(map(self.visit, node.body))                      # Recursively call the other nodes
         )
 
     def visit_Return(self, node):
@@ -96,8 +96,8 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
     def __call__(self, inpt):
         output = ct.c_int()
         self._c_function(inpt, ct.byref(output))
-        return output.value    
-    
+        return output.value
+
 
 
 class LazySlimmy(LazySpecializedFunction):
@@ -106,21 +106,21 @@ class LazySlimmy(LazySpecializedFunction):
 
     def __init__(self, py_ast = None):
         py_ast = py_ast or get_ast(self.kernel)
-        super(Slimmy, self).__init__(py_ast)
+        super(LazySlimmy, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
         # what happens if you have more than one arg?
         A = args[0]
-        return Slimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
+        return LazySlimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
 
 
     def transform(self, tree, program_config):
-        #browser_show_ast(tree,'tree_init.png')
+        browser_show_ast(tree,'tree_init.png')
         arg_cfg, tune_cfg = program_config
         tree = XorReductionFrontend().visit(tree)
         #browser_show_ast(tree, 'tree_post_frontend.png')
         tree = XorReductionCBackend(arg_cfg).visit(tree)
-        #browser_show_ast(tree, 'tree_post_backend.png')
+        browser_show_ast(tree, 'tree_post_backend.png')
         fn = ConcreteXorReduction()
         arg_type = np.ctypeslib.ndpointer(arg_cfg.dtype, arg_cfg.ndim, arg_cfg.shape, arg_cfg.flags)
         print(tree.files[0])
@@ -130,7 +130,13 @@ class LazySlimmy(LazySpecializedFunction):
                            )
 
     def points(self, inpt):
-        return np.nditer(inpt)
+        # return np.nditer(inpt)
+
+        # Mihir's Possible Fix... no idea of knowing
+        iter = np.nditer(input, flags=['c_index'])
+        while not iter.finished:
+            yield iter.index
+            iter.iternext()
 
 
 
@@ -143,7 +149,7 @@ class XorReduction(LazySlimmy):
         '''
         result = 0
         for point in self.points(inpt):
-            result = point ^ result
+            result = inpt[point] ^ result
         return result
 
 
@@ -153,4 +159,3 @@ if __name__ == '__main__':
     arr = np.array([0b1100,0b1001])
     print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
     print(XorReducer(arr))
-
