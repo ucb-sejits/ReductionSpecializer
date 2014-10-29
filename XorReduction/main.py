@@ -4,16 +4,30 @@ specializer XorReduction
 
 from __future__ import print_function
 
+import logging
+
+logging.basicConfig(level=20)
+
+
 import numpy as np
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
 from ctree.frontend import get_ast
 from ctree import browser_show_ast
 from ctree.transformations import PyBasicConversions
-from ctree.nodes import CtreeNode
+from ctree.nodes import CtreeNode, Project
 from ctree.c.nodes import For, SymbolRef, Assign, Lt, PostInc, \
-    Constant, Deref
+    Constant, Deref, FunctionDecl, Add, Mul, If, And, ArrayRef, FunctionCall, \
+    CFile, Eq, Mod, AugAssign, MulAssign
 import ctree.np
 import ctypes as ct
+from ctree.ocl.macros import get_global_id, get_group_id, get_local_id
+from ctree.ocl.nodes import OclFile
+from ctree.templates.nodes import StringTemplate
+import pycl as cl
+
+from math import log
+
+
 
 import ast
 
@@ -89,14 +103,21 @@ class XorReductionCBackend(ast.NodeTransformer):
 
 
 class ConcreteXorReduction(ConcreteSpecializedFunction):
-    def finalize(self, entry_name, tree, entry_type):
+
+    def __init__(self):
+        self.context = cl.clCreateContextFromType()
+        self.queue = cl.clCreateCommandQueue(self.context)
+
+    def finalize(self, kernel, tree, entry_name, entry_type):
+        self.kernel = kernel
         self._c_function = self._compile(entry_name, tree, entry_type)
         return self
 
-    def __call__(self, inpt):
-        output = ct.c_int()
-        self._c_function(inpt, ct.byref(output))
-        return output.value
+    def __call__(self, A):
+        buf, evt = cl.buffer_from_ndarray(self.queue, A, blocking=False)
+        self._c_function(self.queue, self.kernel, buf)
+        B, evt = cl.buffer_to_ndarray(self.queue, buf, like=A)
+        return B
 
 
 
@@ -105,7 +126,7 @@ class LazySlimmy(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig',['dtype','ndim','shape','size','flags'])
 
     def __init__(self, py_ast = None):
-        py_ast = py_ast or get_ast(self.kernel)
+        py_ast = py_ast or get_ast(self.apply)
         super(LazySlimmy, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
@@ -117,21 +138,20 @@ class LazySlimmy(LazySpecializedFunction):
     def transform(self, tree, program_config):
         
         A = program_config[0]
-        len_A = np.prod(A._shape_)
-        inner_type = A._dtype_.type()
-
-        apply_one = PyBasicConversions().visit(py_ast.body[0])
+        len_A = np.prod(A.shape)
+        inner_type = A.dtype.type()
+        pointer = np.ctypeslib.ndpointer(A.dtype, A.ndim, A.shape)
+        apply_one = PyBasicConversions().visit(tree.body[0])
         apply_one.return_type = inner_type
         apply_one.params[0].type = inner_type
+        apply_one.params[1].type = inner_type
 
 
 
         # C-Code for in-place operations
         # __kernel void apply_kernel(__global float* A) {
         #     int i = get_global_id(0);
-        #     if (i < 123) {
-        #         A[i] = apply(A[i]);
-        #     };
+        #     A[i] = apply(A[i])
         # };
 
         # C-Code for Reduction
@@ -141,32 +161,45 @@ class LazySlimmy(LazySpecializedFunction):
         #         A[i] = apply(A[i], A[i+1]);
         #     };
         # };
-
+        # __kernel void apply_kernel(__global int* A)
+        # {
+        #     int i = get_global_id(0);
+        #     for (int iter = 0; iter < <Arr Len>; iter *= 2)
+        #         {
+        #             if (i % 2*iter == 0)
+        #                 {
+        #                     A[i] = apply(A[i], A[i+2**iter]);
+        #                 }
+        #         }
+        # }
         apply_kernel = FunctionDecl(None, "apply_kernel",
-                       params=[SymbolRef("A", A()).set_global()],
-                       defn=[
-                            Assign(SymbolRef("index", ct.c_int()), get_global_id(0)),
-                            Assign(SymbolRef("next", ct.c_int()), Add(SymbolRef("index"), Constant(1))),
+                                    params=[SymbolRef("A", pointer()).set_global()],
+                                    defn=[
+                                        Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
+                                        Assign(SymbolRef('id',ct.c_int()), get_global_id(0)),
+                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)), Lt(SymbolRef('i'), Constant(32)),
+                                            MulAssign(SymbolRef('i'), Constant(2)),
+                                            [
+                                                If(Eq(Mod(SymbolRef('id'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
+                                                   [
+                                                       Assign(ArrayRef(SymbolRef('A'),SymbolRef('id')),
+                                                              FunctionCall(SymbolRef('apply'),
+                                                                           [
+                                                                               ArrayRef(SymbolRef('A'), SymbolRef('id')),
+                                                                               ArrayRef(SymbolRef('A'), Add(SymbolRef('id'),SymbolRef('i')))
+                                                                           ])),
+                                                   ]
+                                                ),
+                                                FunctionCall(SymbolRef('barrier'),[SymbolRef('CLK_LOCAL_MEM_FENCE')])
 
-                            # below I'm thinking that the work group id is the index of the iteration; may be wrong here...
-                            Assign(SymbolRef("iteration", ct.c_int()), get_group_id(0)),        
-                            Assign(SymbolRef("modulator", ct.c_int()), Mul(Add(SymbolRef("iteration"), Constant(1)), Constant(2))),
-
-                            
-                            If(And(Lt(SymbolRef("next"), Constant(len_A)), Eq(Mod(SymbolRef("index"), SymbolRef("modulator")), Constant(0))), 
-                                [
-                                    Assign(ArrayRef(SymbolRef("A"), SymbolRef("index")),
-                                                FunctionCall(SymbolRef("apply"),
-                                                    [
-                                                        ArrayRef(SymbolRef("A"), SymbolRef("index")), 
-                                                        ArrayRef(SymbolRef("A"), SymbolRef("next"))
-                                                    ]
-                                                )
-                                           ),
-                                ], 
-                                []
-                            ),
-                        ]
+                                            ]
+                                        ),
+                                        If(Eq(get_local_id(0), Constant(0)),
+                                           [
+                                               Assign(ArrayRef(SymbolRef('A'), SymbolRef('groupId')), ArrayRef(SymbolRef('A'), SymbolRef('id')))
+                                           ]
+                                        )
+                                    ]
         ).set_kernel()
 
         kernel = OclFile("kernel", [apply_one, apply_kernel])
@@ -229,7 +262,7 @@ class XorOne(LazySlimmy):
 
     @staticmethod
     def apply(x, y):
-        return x ^ y
+        return x + y
 
 
 class XorReduction(LazySlimmy):
@@ -246,14 +279,21 @@ class XorReduction(LazySlimmy):
 
 ## MAIN EXECUTION ##
 
+def test(apply, arr):
+    pass
+
 if __name__ == '__main__':
     # XorReducer = XorReduction()
     # arr = np.array([0b1100,0b1001])
     # print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
     # print(XorReducer(arr))
 
-    arr = np.array([0b1100,0b1001])
+    #arr = (128*np.random.random(8)).astype(np.int32)
+    arr = np.ones(64, np.int32)
     xorer = XorOne()
-    actual = xorer(arr)
-    expected = doubler.interpret(arr)
-    print expected
+    output = xorer(arr)
+    actual = reduce(lambda x,y : x+y, arr)
+    print('output:',[bin(i) for i in output][:64], bin(output[32]))
+    print('actual:', actual, bin(actual))
+    print('input:',[bin(i) for i in arr][:64])
+    print('result:',actual, output[0], actual==output[0])
