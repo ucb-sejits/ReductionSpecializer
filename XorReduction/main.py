@@ -115,19 +115,101 @@ class LazySlimmy(LazySpecializedFunction):
 
 
     def transform(self, tree, program_config):
-        browser_show_ast(tree,'tree_init.png')
-        arg_cfg, tune_cfg = program_config
-        tree = XorReductionFrontend().visit(tree)
-        #browser_show_ast(tree, 'tree_post_frontend.png')
-        tree = XorReductionCBackend(arg_cfg).visit(tree)
-        browser_show_ast(tree, 'tree_post_backend.png')
+        
+        A = program_config[0]
+        len_A = np.prod(A._shape_)
+        inner_type = A._dtype_.type()
+
+        apply_one = PyBasicConversions().visit(py_ast.body[0])
+        apply_one.return_type = inner_type
+        apply_one.params[0].type = inner_type
+
+
+
+        # C-Code for in-place operations
+        # __kernel void apply_kernel(__global float* A) {
+        #     int i = get_global_id(0);
+        #     if (i < 123) {
+        #         A[i] = apply(A[i]);
+        #     };
+        # };
+
+        # C-Code for Reduction
+        # __kernel void apply_kernel(__global int* A) {
+        #     int i = get_global_id(0);
+        #     if (i + 1 < <Array length>) {
+        #         A[i] = apply(A[i], A[i+1]);
+        #     };
+        # };
+
+        apply_kernel = FunctionDecl(None, "apply_kernel",
+                       params=[SymbolRef("A", A()).set_global()],
+                       defn=[
+                            Assign(SymbolRef("index", ct.c_int()), get_global_id(0)),
+                            Assign(SymbolRef("next", ct.c_int()), Add(SymbolRef("index"), Constant(1))),
+
+                            # below I'm thinking that the work group id is the index of the iteration; may be wrong here...
+                            Assign(SymbolRef("iteration", ct.c_int()), get_group_id(0)),        
+                            Assign(SymbolRef("modulator", ct.c_int()), Mul(Add(SymbolRef("iteration"), Constant(1)), Constant(2))),
+
+                            
+                            If(And(Lt(SymbolRef("next"), Constant(len_A)), Eq(Mod(SymbolRef("index"), SymbolRef("modulator")), Constant(0))), 
+                                [
+                                    Assign(ArrayRef(SymbolRef("A"), SymbolRef("index")),
+                                                FunctionCall(SymbolRef("apply"),
+                                                    [
+                                                        ArrayRef(SymbolRef("A"), SymbolRef("index")), 
+                                                        ArrayRef(SymbolRef("A"), SymbolRef("next"))
+                                                    ]
+                                                )
+                                           ),
+                                ], 
+                                []
+                            ),
+                        ]
+        ).set_kernel()
+
+        kernel = OclFile("kernel", [apply_one, apply_kernel])
+
+        control = StringTemplate(r"""
+        #ifdef __APPLE__
+        #include <OpenCL/opencl.h>
+        #else
+        #include <CL/cl.h>
+        #endif
+        void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf) {
+            size_t global = $n;
+            size_t local = 32;
+            clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
+            clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
+
+        }
+        """, {'n': Constant(len_A + 32 - (len_A % 32))})        # making it aligned LOL?
+
+
+        proj = Project([kernel, CFile("generated", [control])])
         fn = ConcreteXorReduction()
-        arg_type = np.ctypeslib.ndpointer(arg_cfg.dtype, arg_cfg.ndim, arg_cfg.shape, arg_cfg.flags)
-        print(tree.files[0])
-        return fn.finalize('kernel',
-                           tree,
-                           ct.CFUNCTYPE(None,arg_type, ct.POINTER(ct.c_int32))
-                           )
+
+        program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
+        apply_kernel_ptr = program['apply_kernel']
+
+        entry_type = ct.CFUNCTYPE(None, cl.cl_command_queue, cl.cl_kernel, cl.cl_mem)
+        return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
+
+
+        # browser_show_ast(tree,'tree_init.png')
+        # arg_cfg, tune_cfg = program_config
+        # tree = XorReductionFrontend().visit(tree)
+        # #browser_show_ast(tree, 'tree_post_frontend.png')
+        # tree = XorReductionCBackend(arg_cfg).visit(tree)
+        # browser_show_ast(tree, 'tree_post_backend.png')
+        # fn = ConcreteXorReduction()
+        # arg_type = np.ctypeslib.ndpointer(arg_cfg.dtype, arg_cfg.ndim, arg_cfg.shape, arg_cfg.flags)
+        # print(tree.files[0])
+        # return fn.finalize('kernel',
+        #                    tree,
+        #                    ct.CFUNCTYPE(None,arg_type, ct.POINTER(ct.c_int32))
+        #                    )
 
     def points(self, inpt):
         # return np.nditer(inpt)
@@ -139,6 +221,15 @@ class LazySlimmy(LazySpecializedFunction):
             iter.iternext()
 
 
+
+#--------------------------------
+
+class XorOne(LazySlimmy):
+    """Xors elements of the array."""
+
+    @staticmethod
+    def apply(x, y):
+        return x ^ y
 
 
 class XorReduction(LazySlimmy):
@@ -153,9 +244,16 @@ class XorReduction(LazySlimmy):
         return result
 
 
+## MAIN EXECUTION ##
 
 if __name__ == '__main__':
-    XorReducer = XorReduction()
+    # XorReducer = XorReduction()
+    # arr = np.array([0b1100,0b1001])
+    # print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
+    # print(XorReducer(arr))
+
     arr = np.array([0b1100,0b1001])
-    print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
-    print(XorReducer(arr))
+    xorer = XorOne()
+    actual = xorer(arr)
+    expected = doubler.interpret(arr)
+    print expected
