@@ -17,16 +17,17 @@ from ctree.transformations import PyBasicConversions
 from ctree.nodes import CtreeNode, Project
 from ctree.c.nodes import For, SymbolRef, Assign, Lt, PostInc, \
     Constant, Deref, FunctionDecl, Add, Mul, If, And, ArrayRef, FunctionCall, \
-    CFile, Eq, Mod, AugAssign, MulAssign
+    CFile, Eq, Mod, AugAssign, MulAssign, LtE, String
 import ctree.np
 import ctypes as ct
-from ctree.ocl.macros import get_global_id, get_group_id, get_local_id
+from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, get_global_size
 from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
 import pycl as cl
 
-from math import log
+from math import ceil
 
+WORK_GROUP_SIZE = 32
 
 
 import ast
@@ -114,9 +115,11 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         return self
 
     def __call__(self, A):
+        output_array = np.empty(ceil(len(A)/WORK_GROUP_SIZE), np.int32)
         buf, evt = cl.buffer_from_ndarray(self.queue, A, blocking=False)
-        self._c_function(self.queue, self.kernel, buf)
-        B, evt = cl.buffer_to_ndarray(self.queue, buf, like=A)
+        output_buffer, output_evt = cl.buffer_from_ndarray(self.queue, output_array, blocking=False)
+        self._c_function(self.queue, self.kernel, buf, output_buffer)
+        B, evt = cl.buffer_to_ndarray(self.queue, output_buffer, like=output_array)
         return B
 
 
@@ -173,20 +176,25 @@ class LazySlimmy(LazySpecializedFunction):
         #         }
         # }
         apply_kernel = FunctionDecl(None, "apply_kernel",
-                                    params=[SymbolRef("A", pointer()).set_global()],
+                                    params=[SymbolRef("A", pointer()).set_global(),
+                                            SymbolRef("output_buf", pointer()).set_global()],
                                     defn=[
                                         Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
-                                        Assign(SymbolRef('id',ct.c_int()), get_global_id(0)),
-                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)), Lt(SymbolRef('i'), Constant(32)),
+                                        Assign(SymbolRef('globalId',ct.c_int()), get_global_id(0)),
+                                        Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),
+                                        FunctionCall(SymbolRef('printf'), [String("%i\\n"), SymbolRef('localId')]),
+                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)), Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),
                                             MulAssign(SymbolRef('i'), Constant(2)),
                                             [
-                                                If(Eq(Mod(SymbolRef('id'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
+                                                # If(And(Eq(Mod(SymbolRef('id'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
+                                                #        Lt(Add(SymbolRef('id'), SymbolRef('i')), Constant(len_A))
+                                                If(Eq(Mod(SymbolRef('globalId'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
                                                    [
-                                                       Assign(ArrayRef(SymbolRef('A'),SymbolRef('id')),
+                                                       Assign(ArrayRef(SymbolRef('A'),SymbolRef('globalId')),
                                                               FunctionCall(SymbolRef('apply'),
                                                                            [
-                                                                               ArrayRef(SymbolRef('A'), SymbolRef('id')),
-                                                                               ArrayRef(SymbolRef('A'), Add(SymbolRef('id'),SymbolRef('i')))
+                                                                               ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
+                                                                               ArrayRef(SymbolRef('A'), Add(SymbolRef('globalId'),SymbolRef('i')))
                                                                            ])),
                                                    ]
                                                 ),
@@ -194,9 +202,9 @@ class LazySlimmy(LazySpecializedFunction):
 
                                             ]
                                         ),
-                                        If(Eq(get_local_id(0), Constant(0)),
+                                        If(Eq(SymbolRef('localId'), Constant(0)),
                                            [
-                                               Assign(ArrayRef(SymbolRef('A'), SymbolRef('groupId')), ArrayRef(SymbolRef('A'), SymbolRef('id')))
+                                               Assign(ArrayRef(SymbolRef('output_buf'), SymbolRef('groupId')), ArrayRef(SymbolRef('A'), SymbolRef('globalId')))
                                            ]
                                         )
                                     ]
@@ -210,14 +218,15 @@ class LazySlimmy(LazySpecializedFunction):
         #else
         #include <CL/cl.h>
         #endif
-        void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf) {
+        void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf, cl_mem out_buf) {
             size_t global = $n;
-            size_t local = 32;
+            size_t local = $local;
             clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
+            clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
             clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
 
         }
-        """, {'n': Constant(len_A + 32 - (len_A % 32))})        # making it aligned LOL?
+        """, {'local': Constant(WORK_GROUP_SIZE), 'n': Constant(len_A)})        # making it aligned LOL?
 
 
         proj = Project([kernel, CFile("generated", [control])])
@@ -293,7 +302,8 @@ if __name__ == '__main__':
     xorer = XorOne()
     output = xorer(arr)
     actual = reduce(lambda x,y : x+y, arr)
-    print('output:',[bin(i) for i in output][:64], bin(output[32]))
+    print(output)
+    print('output:',[bin(i) for i in output][:64])
     print('actual:', actual, bin(actual))
     print('input:',[bin(i) for i in arr][:64])
     print('result:',actual, output[0], actual==output[0])
