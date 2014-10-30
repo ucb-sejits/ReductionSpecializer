@@ -2,7 +2,7 @@
 specializer XorReduction
 """
 
-from __future__ import print_function
+from __future__ import print_function, division
 
 import logging
 
@@ -24,6 +24,8 @@ from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, get_glob
 from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
 import pycl as cl
+
+import sys
 
 from math import ceil
 
@@ -179,16 +181,18 @@ class LazySlimmy(LazySpecializedFunction):
                                     params=[SymbolRef("A", pointer()).set_global(),
                                             SymbolRef("output_buf", pointer()).set_global()],
                                     defn=[
+                                        FunctionCall(SymbolRef('printf'), [String('Beginning')]),
                                         Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
                                         Assign(SymbolRef('globalId',ct.c_int()), get_global_id(0)),
                                         Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),
-                                        FunctionCall(SymbolRef('printf'), [String("%i\\n"), SymbolRef('localId')]),
+                                        FunctionCall(SymbolRef('printf'), [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'), SymbolRef('localId'), String("Outside For")]),
                                         For(Assign(SymbolRef('i', ct.c_int()), Constant(1)), Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),
                                             MulAssign(SymbolRef('i'), Constant(2)),
                                             [
-                                                # If(And(Eq(Mod(SymbolRef('id'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
-                                                #        Lt(Add(SymbolRef('id'), SymbolRef('i')), Constant(len_A))
-                                                If(Eq(Mod(SymbolRef('globalId'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
+                                                FunctionCall(SymbolRef('printf'), [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'), SymbolRef('localId'), SymbolRef('i')]),
+                                                If(And(Eq(Mod(SymbolRef('globalId'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
+                                                        Lt(Add(SymbolRef('globalId'), SymbolRef('i')), Constant(len_A))),
+                                                # If(Eq(Mod(SymbolRef('globalId'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
                                                    [
                                                        Assign(ArrayRef(SymbolRef('A'),SymbolRef('globalId')),
                                                               FunctionCall(SymbolRef('apply'),
@@ -226,7 +230,7 @@ class LazySlimmy(LazySpecializedFunction):
             clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
 
         }
-        """, {'local': Constant(WORK_GROUP_SIZE), 'n': Constant(len_A)})        # making it aligned LOL?
+        """, {'local': Constant(WORK_GROUP_SIZE), 'n': Constant(len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE))})        # making it aligned LOL?
 
 
         proj = Project([kernel, CFile("generated", [control])])
@@ -298,7 +302,7 @@ if __name__ == '__main__':
     # print(XorReducer(arr))
 
     #arr = (128*np.random.random(8)).astype(np.int32)
-    arr = np.ones(64, np.int32)
+    arr = np.ones(int(sys.argv[1]), np.int32)
     xorer = XorOne()
     output = xorer(arr)
     actual = reduce(lambda x,y : x+y, arr)
