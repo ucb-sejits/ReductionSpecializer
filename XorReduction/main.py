@@ -8,7 +8,6 @@ import logging
 
 logging.basicConfig(level=20)
 
-
 import numpy as np
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
 from ctree.frontend import get_ast
@@ -25,16 +24,18 @@ from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
 import pycl as cl
 
+
+from math import log, ceil
 import sys
 
 from math import ceil
 
 WORK_GROUP_SIZE = 32
 
-
 import ast
 
 from collections import namedtuple
+
 
 class PointsLoop(CtreeNode):
     _fields = ['target', 'iter_target', 'body']
@@ -43,17 +44,18 @@ class PointsLoop(CtreeNode):
         self.target = target
         self.iter_target = iter_target
         self.body = body
-        #super(PointsLoop, self).__init__()
+        # super(PointsLoop, self).__init__()
 
     def label(self):
         return str(self.iter_target)
 
+
 class XorReductionFrontend(PyBasicConversions):
     def visit_For(self, node):
         if isinstance(node.iter, ast.Call) and \
-            isinstance(node.iter.func, ast.Attribute) and \
-            node.iter.func.attr is 'points' and \
-            node.iter.func.value.id is 'self':
+                isinstance(node.iter.func, ast.Attribute) and \
+                        node.iter.func.attr is 'points' and \
+                        node.iter.func.value.id is 'self':
             target = node.target.id
             iter_target = node.iter.args[0].id
             body = [self.visit(statement) for statement in node.body]
@@ -61,32 +63,34 @@ class XorReductionFrontend(PyBasicConversions):
         else:
             return node
 
+
 class XorReductionCBackend(ast.NodeTransformer):
     def __init__(self, arg_cfg):
         self.arg_cfg = arg_cfg
         self.retval = None
 
     def visit_FunctionDecl(self, node):
-
         # what happens if you have multiple args?
-        arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim, self.arg_cfg.shape)  # arg_type is the c-type of the input (like int *)
+        arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim,
+                                          self.arg_cfg.shape)  # arg_type is the c-type of the input (like int *)
 
         # TODO: stripping out self, as is done above, should really be abstracted, as it's the same everywhere
         # Get the actual params (stripping out "self" from node.params)
-        param = node.params[1]                                      # note that params[0] is self
-        param.type = arg_type()                                     # because logic
-        node.params = [param]                                       # this basically strips out "self"
+        param = node.params[1]  # note that params[0] is self
+        param.type = arg_type()  # because logic
+        node.params = [param]  # this basically strips out "self"
 
-        ## Alternative to above code; stripping out "self" from node.params
+        # # Alternative to above code; stripping out "self" from node.params
         # node.params[1].type = argtype()
         # node.params = node.params[1:]
 
         # TODO: below, 'output' should really be (int *) hardcoded, rather than the same
         #       as the input type (which is represented by argtype)
         ## Adding the 'output' variable as one of the parameters of type argtype
-        retval = SymbolRef("output", arg_type())                # retval is a symbol reference to c-variable named "output" of type argtype
-        self.retval = "output"                                  # 'output' is the name of
-        node.params.append(retval)                              # this appends the output parameter to the list of parameters
+        retval = SymbolRef("output",
+                           arg_type())  # retval is a symbol reference to c-variable named "output" of type argtype
+        self.retval = "output"  # 'output' is the name of
+        node.params.append(retval)  # this appends the output parameter to the list of parameters
         node.defn = list(map(self.visit, node.defn))
         node.defn[0].left.type = arg_type._dtype_.type()
         return node
@@ -95,10 +99,10 @@ class XorReductionCBackend(ast.NodeTransformer):
         target = node.target
         return For(
             # TODO: Not sustainable... what happens i starts at 1?
-            Assign(SymbolRef(target, ct.c_int()), Constant(0)),   # int i = 0;
-            Lt(SymbolRef(target), Constant(self.arg_cfg.size)),   # 'Lt' = Less than; i < size of array
-            PostInc(SymbolRef(target)),                           # i++
-            list(map(self.visit, node.body))                      # Recursively call the other nodes
+            Assign(SymbolRef(target, ct.c_int()), Constant(0)),  # int i = 0;
+            Lt(SymbolRef(target), Constant(self.arg_cfg.size)),  # 'Lt' = Less than; i < size of array
+            PostInc(SymbolRef(target)),  # i++
+            list(map(self.visit, node.body))  # Recursively call the other nodes
         )
 
     def visit_Return(self, node):
@@ -106,7 +110,6 @@ class XorReductionCBackend(ast.NodeTransformer):
 
 
 class ConcreteXorReduction(ConcreteSpecializedFunction):
-
     def __init__(self):
         self.context = cl.clCreateContextFromType()
         self.queue = cl.clCreateCommandQueue(self.context)
@@ -117,7 +120,7 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         return self
 
     def __call__(self, A):
-        output_array = np.empty(ceil(len(A)/WORK_GROUP_SIZE), np.int32)
+        output_array = np.empty(ceil(len(A) / WORK_GROUP_SIZE), np.int32)
         buf, evt = cl.buffer_from_ndarray(self.queue, A, blocking=False)
         output_buffer, output_evt = cl.buffer_from_ndarray(self.queue, output_array, blocking=False)
         self._c_function(self.queue, self.kernel, buf, output_buffer)
@@ -125,12 +128,10 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         return B
 
 
-
 class LazySlimmy(LazySpecializedFunction):
+    subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
 
-    subconfig_type = namedtuple('subconfig',['dtype','ndim','shape','size','flags'])
-
-    def __init__(self, py_ast = None):
+    def __init__(self, py_ast=None):
         py_ast = py_ast or get_ast(self.apply)
         super(LazySlimmy, self).__init__(py_ast)
 
@@ -141,7 +142,6 @@ class LazySlimmy(LazySpecializedFunction):
 
 
     def transform(self, tree, program_config):
-        
         A = program_config[0]
         len_A = np.prod(A.shape)
         inner_type = A.dtype.type()
@@ -155,7 +155,7 @@ class LazySlimmy(LazySpecializedFunction):
 
         # C-Code for in-place operations
         # __kernel void apply_kernel(__global float* A) {
-        #     int i = get_global_id(0);
+        # int i = get_global_id(0);
         #     A[i] = apply(A[i])
         # };
 
@@ -179,36 +179,48 @@ class LazySlimmy(LazySpecializedFunction):
         # }
         apply_kernel = FunctionDecl(None, "apply_kernel",
                                     params=[SymbolRef("A", pointer()).set_global(),
-                                            SymbolRef("output_buf", pointer()).set_global()],
+                                            SymbolRef("output_buf", pointer()).set_global(),
+                                            SymbolRef("len", ct.c_int())
+                                    ],
                                     defn=[
-                                        FunctionCall(SymbolRef('printf'), [String('Beginning')]),
+                                        #FunctionCall(SymbolRef('printf'), [String("%i\\n"), SymbolRef("len")]),
                                         Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
-                                        Assign(SymbolRef('globalId',ct.c_int()), get_global_id(0)),
+                                        Assign(SymbolRef('globalId', ct.c_int()), get_global_id(0)),
                                         Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),
-                                        FunctionCall(SymbolRef('printf'), [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'), SymbolRef('localId'), String("Outside For")]),
-                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)), Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),
+                                        # FunctionCall(SymbolRef('printf'),
+                                        #              [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'),
+                                        #               SymbolRef('localId'), String("Outside For")]),
+                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)),
+                                            Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),
                                             MulAssign(SymbolRef('i'), Constant(2)),
                                             [
-                                                FunctionCall(SymbolRef('printf'), [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'), SymbolRef('localId'), SymbolRef('i')]),
-                                                If(And(Eq(Mod(SymbolRef('globalId'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
-                                                        Lt(Add(SymbolRef('globalId'), SymbolRef('i')), Constant(len_A))),
-                                                # If(Eq(Mod(SymbolRef('globalId'),Mul(SymbolRef('i'),Constant(2))), Constant(0)),
+                                                # FunctionCall(SymbolRef('printf'),
+                                                #              [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'),
+                                                #               SymbolRef('localId'), SymbolRef('i')]),
+                                                If(And(Eq(Mod(SymbolRef('globalId'), Mul(SymbolRef('i'), Constant(2))),
+                                                          Constant(0)),
+                                                       Lt(Add(SymbolRef('globalId'), SymbolRef('i')),
+                                                          SymbolRef("len"))),
                                                    [
-                                                       Assign(ArrayRef(SymbolRef('A'),SymbolRef('globalId')),
+                                                       Assign(ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
                                                               FunctionCall(SymbolRef('apply'),
                                                                            [
-                                                                               ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
-                                                                               ArrayRef(SymbolRef('A'), Add(SymbolRef('globalId'),SymbolRef('i')))
+                                                                               ArrayRef(SymbolRef('A'),
+                                                                                        SymbolRef('globalId')),
+                                                                               ArrayRef(SymbolRef('A'),
+                                                                                        Add(SymbolRef('globalId'),
+                                                                                            SymbolRef('i')))
                                                                            ])),
                                                    ]
                                                 ),
-                                                FunctionCall(SymbolRef('barrier'),[SymbolRef('CLK_LOCAL_MEM_FENCE')])
+                                                FunctionCall(SymbolRef('barrier'), [SymbolRef('CLK_LOCAL_MEM_FENCE')])
 
                                             ]
                                         ),
                                         If(Eq(SymbolRef('localId'), Constant(0)),
                                            [
-                                               Assign(ArrayRef(SymbolRef('output_buf'), SymbolRef('groupId')), ArrayRef(SymbolRef('A'), SymbolRef('globalId')))
+                                               Assign(ArrayRef(SymbolRef('output_buf'), SymbolRef('groupId')),
+                                                      ArrayRef(SymbolRef('A'), SymbolRef('globalId')))
                                            ]
                                         )
                                     ]
@@ -222,16 +234,30 @@ class LazySlimmy(LazySpecializedFunction):
         #else
         #include <CL/cl.h>
         #endif
+
+        #include <stdio.h>
+
         void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf, cl_mem out_buf) {
             size_t global = $n;
             size_t local = $local;
-            clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
-            clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
-            clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
-
+            intptr_t len = $length;
+            cl_mem swap;
+            for (int runs = 0; runs < $run_limit ; runs++){
+                clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
+                clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
+                clSetKernelArg(kernel, 2, sizeof(intptr_t), &len);
+                clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
+                swap = buf;
+                buf = out_buf;
+                out_buf = swap;
+                len  = len/local + (len % local != 0);
+            }
         }
-        """, {'local': Constant(WORK_GROUP_SIZE), 'n': Constant(len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE))})        # making it aligned LOL?
-
+        """, {'local': Constant(WORK_GROUP_SIZE),
+              'n': Constant(len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE)),
+              'length': Constant(len_A),
+              'run_limit': Constant(ceil(log(len_A, WORK_GROUP_SIZE)))
+        })
 
         proj = Project([kernel, CFile("generated", [control])])
         fn = ConcreteXorReduction()
@@ -267,8 +293,7 @@ class LazySlimmy(LazySpecializedFunction):
             iter.iternext()
 
 
-
-#--------------------------------
+# --------------------------------
 
 class XorOne(LazySlimmy):
     """Xors elements of the array."""
@@ -295,6 +320,7 @@ class XorReduction(LazySlimmy):
 def test(apply, arr):
     pass
 
+
 if __name__ == '__main__':
     # XorReducer = XorReduction()
     # arr = np.array([0b1100,0b1001])
@@ -305,9 +331,9 @@ if __name__ == '__main__':
     arr = np.ones(int(sys.argv[1]), np.int32)
     xorer = XorOne()
     output = xorer(arr)
-    actual = reduce(lambda x,y : x+y, arr)
+    actual = reduce(lambda x, y: x + y, arr)
     print(output)
-    print('output:',[bin(i) for i in output][:64])
+    print('output:', [bin(i) for i in output][:64])
     print('actual:', actual, bin(actual))
-    print('input:',[bin(i) for i in arr][:64])
-    print('result:',actual, output[0], actual==output[0])
+    print('input:', [bin(i) for i in arr][:64])
+    print('result:', actual, output[0], actual == output[0])
