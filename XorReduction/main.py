@@ -152,52 +152,20 @@ class LazySlimmy(LazySpecializedFunction):
         apply_one.params[1].type = inner_type
 
 
-
-        # C-Code for in-place operations
-        # __kernel void apply_kernel(__global float* A) {
-        # int i = get_global_id(0);
-        #     A[i] = apply(A[i])
-        # };
-
-        # C-Code for Reduction
-        # __kernel void apply_kernel(__global int* A) {
-        #     int i = get_global_id(0);
-        #     if (i + 1 < <Array length>) {
-        #         A[i] = apply(A[i], A[i+1]);
-        #     };
-        # };
-        # __kernel void apply_kernel(__global int* A)
-        # {
-        #     int i = get_global_id(0);
-        #     for (int iter = 0; iter < <Arr Len>; iter *= 2)
-        #         {
-        #             if (i % 2*iter == 0)
-        #                 {
-        #                     A[i] = apply(A[i], A[i+2**iter]);
-        #                 }
-        #         }
-        # }
         apply_kernel = FunctionDecl(None, "apply_kernel",
                                     params=[SymbolRef("A", pointer()).set_global(),
                                             SymbolRef("output_buf", pointer()).set_global(),
                                             SymbolRef("len", ct.c_int())
                                     ],
                                     defn=[
-                                        #FunctionCall(SymbolRef('printf'), [String("%i\\n"), SymbolRef("len")]),
-                                        Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
-                                        Assign(SymbolRef('globalId', ct.c_int()), get_global_id(0)),
-                                        Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),
-                                        # FunctionCall(SymbolRef('printf'),
-                                        #              [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'),
-                                        #               SymbolRef('localId'), String("Outside For")]),
-                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)),
-                                            Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),
+                                        Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),                          # getting the group id for this work group
+                                        Assign(SymbolRef('globalId', ct.c_int()), get_global_id(0)),                        # getting the global id for this work item
+                                        Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),                          # getting the local id for this work item
+                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)),                                # for(int i=1; i<WORK_GROUP_SIZE; i *= 2)
+                                            Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),                                  
                                             MulAssign(SymbolRef('i'), Constant(2)),
                                             [
-                                                # FunctionCall(SymbolRef('printf'),
-                                                #              [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'),
-                                                #               SymbolRef('localId'), SymbolRef('i')]),
-                                                If(And(Eq(Mod(SymbolRef('globalId'), Mul(SymbolRef('i'), Constant(2))),
+                                                If(And(Eq(Mod(SymbolRef('globalId'), Mul(SymbolRef('i'), Constant(2))),     # if statement checks 
                                                           Constant(0)),
                                                        Lt(Add(SymbolRef('globalId'), SymbolRef('i')),
                                                           SymbolRef("len"))),
@@ -214,7 +182,6 @@ class LazySlimmy(LazySpecializedFunction):
                                                    ]
                                                 ),
                                                 FunctionCall(SymbolRef('barrier'), [SymbolRef('CLK_LOCAL_MEM_FENCE')])
-
                                             ]
                                         ),
                                         If(Eq(SymbolRef('localId'), Constant(0)),
@@ -269,31 +236,17 @@ class LazySlimmy(LazySpecializedFunction):
         return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
 
 
-        # browser_show_ast(tree,'tree_init.png')
-        # arg_cfg, tune_cfg = program_config
-        # tree = XorReductionFrontend().visit(tree)
-        # #browser_show_ast(tree, 'tree_post_frontend.png')
-        # tree = XorReductionCBackend(arg_cfg).visit(tree)
-        # browser_show_ast(tree, 'tree_post_backend.png')
-        # fn = ConcreteXorReduction()
-        # arg_type = np.ctypeslib.ndpointer(arg_cfg.dtype, arg_cfg.ndim, arg_cfg.shape, arg_cfg.flags)
-        # print(tree.files[0])
-        # return fn.finalize('kernel',
-        #                    tree,
-        #                    ct.CFUNCTYPE(None,arg_type, ct.POINTER(ct.c_int32))
-        #                    )
-
     def points(self, inpt):
-        # return np.nditer(inpt)
-
-        # Mihir's Possible Fix... no idea of knowing
         iter = np.nditer(input, flags=['c_index'])
         while not iter.finished:
             yield iter.index
             iter.iternext()
 
 
-# --------------------------------
+
+# ------------------------------- #
+#           USER CODE             #
+# ------------------------------- #
 
 class XorOne(LazySlimmy):
     """Xors elements of the array."""
@@ -315,7 +268,9 @@ class XorReduction(LazySlimmy):
         return result
 
 
-## MAIN EXECUTION ##
+# ------------------------------- #
+#          MAIN EXECUTION         #
+# ------------------------------- #
 
 def test(apply, arr):
     pass
