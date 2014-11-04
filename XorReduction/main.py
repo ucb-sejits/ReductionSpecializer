@@ -16,10 +16,10 @@ from ctree.transformations import PyBasicConversions
 from ctree.nodes import CtreeNode, Project
 from ctree.c.nodes import For, SymbolRef, Assign, Lt, PostInc, \
     Constant, Deref, FunctionDecl, Add, Mul, If, And, ArrayRef, FunctionCall, \
-    CFile, Eq, Mod, AugAssign, MulAssign, LtE, String
+    CFile, Eq, Mod, AugAssign, MulAssign, LtE, String, Div, Gt, BitShRAssign, BitAnd, Sub
 import ctree.np
 import ctypes as ct
-from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, get_global_size
+from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, get_global_size, barrier, CLK_LOCAL_MEM_FENCE
 from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
 import pycl as cl
@@ -187,38 +187,43 @@ class LazySlimmy(LazySpecializedFunction):
                                         Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
                                         Assign(SymbolRef('globalId', ct.c_int()), get_global_id(0)),
                                         Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),
-                                        # FunctionCall(SymbolRef('printf'),
-                                        #              [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'),
-                                        #               SymbolRef('localId'), String("Outside For")]),
-                                        For(Assign(SymbolRef('i', ct.c_int()), Constant(1)),
-                                            Lt(SymbolRef('i'), Constant(WORK_GROUP_SIZE)),
-                                            MulAssign(SymbolRef('i'), Constant(2)),
+                                        Assign(SymbolRef('blockOffset'), ct.c_int()), Mul(SymbolRef('groupId'), 2)
+                                        For(
+                                            Assign(SymbolRef('offset', ct.c_int()), Div(SymbolRef('len'), Constant(2))),
+                                            Gt(SymbolRef('offset'), Constant(0)),
+                                            BitShRAssign(SymbolRef('offset'), Constant(1)),
                                             [
-                                                # FunctionCall(SymbolRef('printf'),
-                                                #              [String("%i\\t%i\\t%i\\n"), SymbolRef('globalId'),
-                                                #               SymbolRef('localId'), SymbolRef('i')]),
-                                                If(And(Eq(Mod(SymbolRef('globalId'), Mul(SymbolRef('i'), Constant(2))),
-                                                          Constant(0)),
-                                                       Lt(Add(SymbolRef('globalId'), SymbolRef('i')),
-                                                          SymbolRef("len"))),
+                                                If(Lt(SymbolRef('localId'), SymbolRef('offset')),
                                                    [
                                                        Assign(ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
                                                               FunctionCall(SymbolRef('apply'),
                                                                            [
-                                                                               ArrayRef(SymbolRef('A'),
-                                                                                        SymbolRef('globalId')),
-                                                                               ArrayRef(SymbolRef('A'),
-                                                                                        Add(SymbolRef('globalId'),
-                                                                                            SymbolRef('i')))
-                                                                           ])),
+                                                                               ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
+                                                                               ArrayRef(SymbolRef('A'), Add(SymbolRef('globalId'),
+                                                                                                            SymbolRef('offset')))
+                                                                           ]
+                                                              )
+                                                       )
                                                    ]
                                                 ),
-                                                FunctionCall(SymbolRef('barrier'), [SymbolRef('CLK_LOCAL_MEM_FENCE')])
-
+                                                barrier(CLK_LOCAL_MEM_FENCE())
                                             ]
                                         ),
                                         If(Eq(SymbolRef('localId'), Constant(0)),
                                            [
+                                               If(BitAnd(SymbolRef('len'), Constant(1)),
+                                                  [
+                                                      Assign(ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
+                                                             FunctionCall(SymbolRef('apply'),
+                                                                          [
+                                                                              ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
+                                                                              ArrayRef(SymbolRef('A'), Sub(SymbolRef('len'),
+                                                                                                           Constant(1)))
+                                                                          ]
+                                                             )
+                                                      )
+                                                  ]
+                                               ),
                                                Assign(ArrayRef(SymbolRef('output_buf'), SymbolRef('groupId')),
                                                       ArrayRef(SymbolRef('A'), SymbolRef('globalId')))
                                            ]
@@ -254,7 +259,7 @@ class LazySlimmy(LazySpecializedFunction):
             }
         }
         """, {'local': Constant(WORK_GROUP_SIZE),
-              'n': Constant(len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE)),
+              'n': Constant((len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE))/2),
               'length': Constant(len_A),
               'run_limit': Constant(ceil(log(len_A, WORK_GROUP_SIZE)))
         })
