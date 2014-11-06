@@ -26,11 +26,11 @@ import pycl as cl
 
 
 from math import log, ceil
-import sys
+import sys, time
 
 from math import ceil
 
-WORK_GROUP_SIZE = 32
+WORK_GROUP_SIZE = 512
 
 import ast
 
@@ -120,12 +120,12 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         return self
 
     def __call__(self, A):
-        output_array = np.empty(ceil(len(A) / WORK_GROUP_SIZE), np.int32)
+        output_array = np.empty(1, np.int32)
         buf, evt = cl.buffer_from_ndarray(self.queue, A, blocking=False)
         output_buffer, output_evt = cl.buffer_from_ndarray(self.queue, output_array, blocking=False)
         self._c_function(self.queue, self.kernel, buf, output_buffer)
         B, evt = cl.buffer_to_ndarray(self.queue, output_buffer, like=output_array)
-        return B
+        return B[0]
 
 
 class LazySlimmy(LazySpecializedFunction):
@@ -150,83 +150,35 @@ class LazySlimmy(LazySpecializedFunction):
         apply_one.return_type = inner_type
         apply_one.params[0].type = inner_type
         apply_one.params[1].type = inner_type
-
-
-
-        # C-Code for in-place operations
-        # __kernel void apply_kernel(__global float* A) {
-        # int i = get_global_id(0);
-        #     A[i] = apply(A[i])
-        # };
-
-        # C-Code for Reduction
-        # __kernel void apply_kernel(__global int* A) {
-        #     int i = get_global_id(0);
-        #     if (i + 1 < <Array length>) {
-        #         A[i] = apply(A[i], A[i+1]);
-        #     };
-        # };
-        # __kernel void apply_kernel(__global int* A)
-        # {
-        #     int i = get_global_id(0);
-        #     for (int iter = 0; iter < <Arr Len>; iter *= 2)
-        #         {
-        #             if (i % 2*iter == 0)
-        #                 {
-        #                     A[i] = apply(A[i], A[i+2**iter]);
-        #                 }
-        #         }
-        # }
+        responsible_size = int(len_A / WORK_GROUP_SIZE)
         apply_kernel = FunctionDecl(None, "apply_kernel",
                                     params=[SymbolRef("A", pointer()).set_global(),
                                             SymbolRef("output_buf", pointer()).set_global(),
-                                            SymbolRef("len", ct.c_int())
+                                            SymbolRef("localData", pointer()).set_local()
                                     ],
                                     defn=[
-                                        #FunctionCall(SymbolRef('printf'), [String("%i\\n"), SymbolRef("len")]),
                                         Assign(SymbolRef('groupId', ct.c_int()), get_group_id(0)),
                                         Assign(SymbolRef('globalId', ct.c_int()), get_global_id(0)),
                                         Assign(SymbolRef('localId', ct.c_int()), get_local_id(0)),
-                                        Assign(SymbolRef('blockOffset'), ct.c_int()), Mul(SymbolRef('groupId'), 2)
-                                        For(
-                                            Assign(SymbolRef('offset', ct.c_int()), Div(SymbolRef('len'), Constant(2))),
-                                            Gt(SymbolRef('offset'), Constant(0)),
-                                            BitShRAssign(SymbolRef('offset'), Constant(1)),
-                                            [
-                                                If(Lt(SymbolRef('localId'), SymbolRef('offset')),
-                                                   [
-                                                       Assign(ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
-                                                              FunctionCall(SymbolRef('apply'),
-                                                                           [
-                                                                               ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
-                                                                               ArrayRef(SymbolRef('A'), Add(SymbolRef('globalId'),
-                                                                                                            SymbolRef('offset')))
-                                                                           ]
-                                                              )
-                                                       )
-                                                   ]
-                                                ),
-                                                barrier(CLK_LOCAL_MEM_FENCE())
-                                            ]
-                                        ),
-                                        If(Eq(SymbolRef('localId'), Constant(0)),
-                                           [
-                                               If(BitAnd(SymbolRef('len'), Constant(1)),
-                                                  [
-                                                      Assign(ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
-                                                             FunctionCall(SymbolRef('apply'),
-                                                                          [
-                                                                              ArrayRef(SymbolRef('A'), SymbolRef('globalId')),
-                                                                              ArrayRef(SymbolRef('A'), Sub(SymbolRef('len'),
-                                                                                                           Constant(1)))
-                                                                          ]
-                                                             )
-                                                      )
-                                                  ]
+                                        Assign(SymbolRef('localResult', ct.c_int()),
+                                               ArrayRef(SymbolRef('A'), SymbolRef('globalId'))
+                                               )
+                                        ] +
+                                        [Assign(SymbolRef('localResult'),
+                                                FunctionCall(SymbolRef('apply'),
+                                                             [SymbolRef('localResult'), ArrayRef(SymbolRef('A'),Add(SymbolRef('globalId'), Constant(i * WORK_GROUP_SIZE)))]))
+                                            for i in range(1, responsible_size)] +
+                                        [
+                                            Assign(ArrayRef(SymbolRef('localData'), SymbolRef('globalId')),
+                                                SymbolRef('localResult')
                                                ),
-                                               Assign(ArrayRef(SymbolRef('output_buf'), SymbolRef('groupId')),
-                                                      ArrayRef(SymbolRef('A'), SymbolRef('globalId')))
-                                           ]
+                                            barrier(CLK_LOCAL_MEM_FENCE()),
+                                        If(Eq(SymbolRef('globalId'), Constant(0)),
+                                           [
+                                                Assign(SymbolRef('localResult'), FunctionCall(SymbolRef('apply'), [SymbolRef('localResult'),
+                                                                                                                   ArrayRef(SymbolRef('localData'),Constant(x))]))
+                                                for x in range(1, WORK_GROUP_SIZE)
+                                           ] + [Assign(ArrayRef(SymbolRef('output_buf'), Constant(0)), SymbolRef('localResult'))]
                                         )
                                     ]
         ).set_kernel()
@@ -243,25 +195,18 @@ class LazySlimmy(LazySpecializedFunction):
         #include <stdio.h>
 
         void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf, cl_mem out_buf) {
-            size_t global = $n;
+            size_t global = $local;
             size_t local = $local;
             intptr_t len = $length;
             cl_mem swap;
-            for (int runs = 0; runs < $run_limit ; runs++){
-                clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
-                clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
-                clSetKernelArg(kernel, 2, sizeof(intptr_t), &len);
-                clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
-                swap = buf;
-                buf = out_buf;
-                out_buf = swap;
-                len  = len/local + (len % local != 0);
-            }
+            clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
+            clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
+            clSetKernelArg(kernel, 2, local * sizeof(int), NULL);
+            clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
         }
         """, {'local': Constant(WORK_GROUP_SIZE),
               'n': Constant((len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE))/2),
-              'length': Constant(len_A),
-              'run_limit': Constant(ceil(log(len_A, WORK_GROUP_SIZE)))
+              'length': Constant(len_A)
         })
 
         proj = Project([kernel, CFile("generated", [control])])
@@ -269,7 +214,6 @@ class LazySlimmy(LazySpecializedFunction):
 
         program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
-
         entry_type = ct.CFUNCTYPE(None, cl.cl_command_queue, cl.cl_kernel, cl.cl_mem)
         return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
 
@@ -291,7 +235,6 @@ class LazySlimmy(LazySpecializedFunction):
     def points(self, inpt):
         # return np.nditer(inpt)
 
-        # Mihir's Possible Fix... no idea of knowing
         iter = np.nditer(input, flags=['c_index'])
         while not iter.finished:
             yield iter.index
@@ -305,7 +248,7 @@ class XorOne(LazySlimmy):
 
     @staticmethod
     def apply(x, y):
-        return x + y
+        return x ^ y
 
 
 class XorReduction(LazySlimmy):
@@ -322,23 +265,13 @@ class XorReduction(LazySlimmy):
 
 ## MAIN EXECUTION ##
 
-def test(apply, arr):
-    pass
-
 
 if __name__ == '__main__':
-    # XorReducer = XorReduction()
-    # arr = np.array([0b1100,0b1001])
-    # print(reduce(lambda x,y: x^y, np.nditer(arr), 0))
-    # print(XorReducer(arr))
 
-    #arr = (128*np.random.random(8)).astype(np.int32)
-    arr = np.ones(int(sys.argv[1]), np.int32)
+    arr = np.ones(eval(sys.argv[1]), np.int32)
     xorer = XorOne()
-    output = xorer(arr)
-    actual = reduce(lambda x, y: x + y, arr)
-    print(output)
-    print('output:', [bin(i) for i in output][:64])
-    print('actual:', actual, bin(actual))
-    print('input:', [bin(i) for i in arr][:64])
-    print('result:', actual, output[0], actual == output[0])
+    print("actual", eval(sys.argv[1]))
+    for i in range(3):
+        start = time.time()
+        print(xorer(arr))
+        print(i, time.time()-start)
