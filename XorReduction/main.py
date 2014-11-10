@@ -35,6 +35,7 @@ WORK_GROUP_SIZE = 1024
 devices = cl.clCreateContextFromType().devices + cl.clCreateContext().devices
 print(devices)
 TARGET_GPU = devices[1]
+ITERATIONS = 0
 
 import ast
 
@@ -124,11 +125,17 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         return self
 
     def __call__(self, A):
+        a = time.time()
         output_array = np.empty(1, A.dtype)
         buf, evt = cl.buffer_from_ndarray(self.queue, A, blocking=False)
         output_buffer, output_evt = cl.buffer_from_ndarray(self.queue, output_array, blocking=False)
+        
+        b = time.time()
         self._c_function(self.queue, self.kernel, buf, output_buffer)
+        c = time.time()
         B, evt = cl.buffer_to_ndarray(self.queue, output_buffer, like=output_array)
+        d = time.time()
+        print("overall execution:", d-a, "Initial Copy:", b-a, "Kernel execution:", c-b, "Final Copy:", d-c)
         return B[0]
 
 
@@ -301,6 +308,15 @@ class RolledSlimmy(LazySpecializedFunction):
 
         #include <stdio.h>
 
+        #include <sys/time.h>
+
+        double read_timer() {
+            struct timeval t;
+            struct timezone tz;
+            gettimeofday(&t, &tz);
+            return (double)t.tv_sec + (double)t.tv_usec * 0.000001;
+        }
+
         void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf, cl_mem out_buf) {
             size_t global = $local;
             size_t local = $local;
@@ -308,11 +324,22 @@ class RolledSlimmy(LazySpecializedFunction):
             clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
             clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
             clSetKernelArg(kernel, 2, local * sizeof(int), NULL);
+            double t0 = read_timer();
             clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
+            double t1 = read_timer();
+            for (int run = 0; run < $runs; run++){
+                clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
+            }
+            double t2 = read_timer();
+            printf("Initial Run: %12.9f \n", t1 - t0);
+            if ($runs){
+                printf("Average time: %12.9f \n", (t2 - t1) / $runs);
+            }
         }
         """, {'local': Constant(WORK_GROUP_SIZE),
               'n': Constant((len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE))/2),
-              'length': Constant(len_A)
+              'length': Constant(len_A),
+              'runs': Constant(ITERATIONS)
         })
 
         proj = Project([kernel, CFile("generated", [control])])
@@ -466,18 +493,18 @@ if __name__ == '__main__':
     device_num = int(sys.argv[1])
     TARGET_GPU = devices[device_num]
     WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
+    size = int(eval(sys.argv[3]))
     print(TARGET_GPU, WORK_GROUP_SIZE)
-    arr = (np.random.rand(int(eval(sys.argv[3])))*8).astype(np.float32)
+    #arr = (np.random.rand(int(eval(sys.argv[3])))*8).astype(np.int32)
+    arr = (np.ones(size)*8).astype(np.float32)
     baseline = Baseline()
     #baseline = lambda x : None
     rolled = Rolled()
+    res = rolled(arr)
+    npres = np.sum(arr)
+    print('Ours',res, type(res), 'NP',npres, type(npres), abs(npres - res) < 1e-8)
     #unrolled = UnRolled()
 
-    times = interleaved_timing((baseline, rolled, np.sum), [arr], 16)
-    rolled_time = times[rolled]
-    baseline_time = times[baseline]
-    np_time = times[np.sum]
-    print('Rolled:', rolled_time, 'Baseline:', baseline_time,'NP:', np_time, 'Delta:', rolled_time - baseline_time)
-    print('Rolled', rolled(arr), 'NP:', np.sum(arr))
+
 
 
