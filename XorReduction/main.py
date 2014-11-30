@@ -2,9 +2,21 @@
 specializer XorReduction
 """
 
-from __future__ import print_function, division
+#
+#   INSTRUCTIONS TO RUN THIS CODE
+#   Execute this code as follows:
+#   >>> python main.py <x> <y> <z>
+#   
+#   Where <x> is an integer that represents the GPU number. If you don't care, choose 0.
+#   Where <y> is an integer that represents the work group size you want. 
+#   Where <z> is an integer that represents the size of your dataset of ones. 
+#
 
-# cTree importations
+#
+# Importations
+#
+
+from __future__ import print_function, division
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
 from ctree.frontend import get_ast
 from ctree import browser_show_ast
@@ -18,6 +30,8 @@ import ctypes as ct
 from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, barrier, CLK_LOCAL_MEM_FENCE
 from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
+from math import log, ceil
+from collections import namedtuple
 
 import numpy as np
 import pycl as cl
@@ -25,8 +39,7 @@ import sys, time
 import ast
 import logging
 
-from math import log, ceil
-from collections import namedtuple
+
 
 
 #
@@ -36,13 +49,16 @@ from collections import namedtuple
 # to be more complicated and requires specialized knowledge to write.
 #
 
-# global constants
+
+#
+# Global Constants
+#
+
 WORK_GROUP_SIZE = 1024
 devices = cl.clCreateContextFromType().devices + cl.clCreateContext().devices
 TARGET_GPU = devices[1]
 ITERATIONS = 0
 # print(devices)                # for debugging only
-
 
 class PointsLoop(CtreeNode):
     _fields = ['target', 'iter_target', 'body']
@@ -161,7 +177,7 @@ class LazySlimmy(LazySpecializedFunction):
         apply_one.return_type = inner_type
         apply_one.params[0].type = inner_type
         apply_one.params[1].type = inner_type
-        responsible_size = int(len_A / WORK_GROUP_SIZE)         # 
+        responsible_size = int(len_A / WORK_GROUP_SIZE)
         apply_kernel = FunctionDecl(None, "apply_kernel",
                                     params=[SymbolRef("A", pointer()).set_global(),
                                             SymbolRef("output_buf", pointer()).set_global(),
@@ -493,14 +509,7 @@ def interleaved_timing(fs, args, iterations):
         i -= 1
     return {f: sum(t)/iterations for f,t in times.items()}
 
-#
-#   INSTRUCTIONS TO RUN THIS CODE
-#   >>> python main.py <x> <y> <z>
-#   
-#   Where <x> is an integer that represents the GPU number. If you don't care, choose 0.
-#   Where <y> is an integer that represents the work group size you want. 
-#   Where <z> is an integer that represents the size of your dataset of ones. 
-#
+
 if __name__ == '__main__':
     device_num = int(sys.argv[1])           # gets the device number from command line args
     TARGET_GPU = devices[device_num]
