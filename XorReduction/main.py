@@ -2,6 +2,8 @@
 specializer XorReduction
 """
 
+from __future__ import print_function, division
+
 # cTree importations
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
 from ctree.frontend import get_ast
@@ -13,7 +15,7 @@ from ctree.c.nodes import For, SymbolRef, Assign, Lt, PostInc, \
     CFile, Eq, Mod, AugAssign, MulAssign, LtE, String, Div, Gt, BitShRAssign, BitAnd, Sub
 import ctree.np
 import ctypes as ct
-from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, get_global_size, barrier, CLK_LOCAL_MEM_FENCE
+from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, barrier, CLK_LOCAL_MEM_FENCE
 from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
 
@@ -23,7 +25,6 @@ import sys, time
 import ast
 import logging
 
-from __future__ import print_function, division
 from math import log, ceil
 from collections import namedtuple
 
@@ -38,9 +39,9 @@ from collections import namedtuple
 # global constants
 WORK_GROUP_SIZE = 1024
 devices = cl.clCreateContextFromType().devices + cl.clCreateContext().devices
-# print(devices)                # for debugging only
 TARGET_GPU = devices[1]
 ITERATIONS = 0
+# print(devices)                # for debugging only
 
 
 class PointsLoop(CtreeNode):
@@ -134,7 +135,7 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         c = time.time()
         B, evt = cl.buffer_to_ndarray(self.queue, output_buffer, like=output_array)
         d = time.time()
-        print("overall execution:", d-a, "Initial Copy:", b-a, "Kernel execution:", c-b, "Final Copy:", d-c)
+        # print("overall execution:", d-a, "Initial Copy:", b-a, "Kernel execution:", c-b, "Final Copy:", d-c)
         return B[0]
 
 
@@ -332,7 +333,7 @@ class RolledSlimmy(LazySpecializedFunction):
                 clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
             }
             double t2 = read_timer();
-            printf("Initial Run: %12.9f \n", t1 - t0);
+            // printf("Initial Run: %12.9f \n", t1 - t0);
             if ($runs){
                 printf("Average time: %12.9f \n", (t2 - t1) / $runs);
             }
@@ -449,7 +450,6 @@ class RolledXor(CopyBaseline):
 class Rolled(RolledSlimmy):
     @staticmethod
     def apply(x, y):
-        #return 0*x + 0*y - -1*x - -1*y+1*x + 1*y - 0*x - 0*y+2*x + 2*y - 1*x - 1*y+3*x + 3*y - 2*x - 2*y+4*x + 4*y - 3*x - 3*y+5*x + 5*y - 4*x - 4*y+6*x + 6*y - 5*x - 5*y+7*x + 7*y - 6*x - 6*y+8*x + 8*y - 7*x - 7*y+9*x + 9*y - 8*x - 8*y+10*x + 10*y - 9*x - 9*y+11*x + 11*y - 10*x - 10*y+12*x + 12*y - 11*x - 11*y+13*x + 13*y - 12*x - 12*y+14*x + 14*y - 13*x - 13*y+15*x + 15*y - 14*x - 14*y+16*x + 16*y - 15*x - 15*y+17*x + 17*y - 16*x - 16*y+18*x + 18*y - 17*x - 17*y+19*x + 19*y - 18*x - 18*y
         return x+y
 
 class XorReduction(LazySlimmy):
@@ -493,21 +493,33 @@ def interleaved_timing(fs, args, iterations):
         i -= 1
     return {f: sum(t)/iterations for f,t in times.items()}
 
+#
+#   INSTRUCTIONS TO RUN THIS CODE
+#   >>> python main.py <x> <y> <z>
+#   
+#   Where <x> is an integer that represents the GPU number. If you don't care, choose 0.
+#   Where <y> is an integer that represents the work group size you want. 
+#   Where <z> is an integer that represents the size of your dataset of ones. 
+#
 if __name__ == '__main__':
-    device_num = int(sys.argv[1])
+    device_num = int(sys.argv[1])           # gets the device number from command line args
     TARGET_GPU = devices[device_num]
+
     WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
     size = int(eval(sys.argv[3]))
     print(TARGET_GPU, WORK_GROUP_SIZE)
-    #arr = (np.random.rand(int(eval(sys.argv[3])))*8).astype(np.int32)
-    arr = (np.ones(size)*8).astype(np.float32)
-    baseline = Baseline()
-    #baseline = lambda x : None
+
+    #arr = (np.random.rand(int(eval(sys.argv[3])))*8).astype(np.int32)      # used for getting random numbers in your dataset
+    arr = (np.ones(size)*8).astype(np.float32)                              # for the creation of a dataset with all 1's
+
+    baseline = Baseline()                                               
     rolled = Rolled()
+    #unrolled = UnRolled()
+
     res = rolled(arr)
     npres = np.sum(arr)
-    print('Ours',res, type(res), 'NP',npres, type(npres), abs(npres - res) < 1e-8)
-    #unrolled = UnRolled()
+    print('Rolled Code: ', res, type(res), 'Numpy: ', npres, type(npres), abs(npres - res) < 1e-8)
+
 
 
 
