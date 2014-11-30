@@ -2,13 +2,7 @@
 specializer XorReduction
 """
 
-from __future__ import print_function, division
-
-import logging
-
-#logging.basicConfig(level=20)
-
-import numpy as np
+# cTree importations
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
 from ctree.frontend import get_ast
 from ctree import browser_show_ast
@@ -22,24 +16,31 @@ import ctypes as ct
 from ctree.ocl.macros import get_global_id, get_group_id, get_local_id, get_global_size, barrier, CLK_LOCAL_MEM_FENCE
 from ctree.ocl.nodes import OclFile
 from ctree.templates.nodes import StringTemplate
+
+import numpy as np
 import pycl as cl
-
-
-
-from math import log, ceil
 import sys, time
+import ast
+import logging
 
-from math import ceil
+from __future__ import print_function, division
+from math import log, ceil
+from collections import namedtuple
 
+
+#
+### Specialist-Writtern Code ###
+#
+# The code below is written by an industrt SPECIALIST. This code is meant
+# to be more complicated and requires specialized knowledge to write.
+#
+
+# global constants
 WORK_GROUP_SIZE = 1024
 devices = cl.clCreateContextFromType().devices + cl.clCreateContext().devices
-print(devices)
+# print(devices)                # for debugging only
 TARGET_GPU = devices[1]
 ITERATIONS = 0
-
-import ast
-
-from collections import namedtuple
 
 
 class PointsLoop(CtreeNode):
@@ -75,15 +76,14 @@ class XorReductionCBackend(ast.NodeTransformer):
         self.retval = None
 
     def visit_FunctionDecl(self, node):
-        # what happens if you have multiple args?
         arg_type = np.ctypeslib.ndpointer(self.arg_cfg.dtype, self.arg_cfg.ndim,
                                           self.arg_cfg.shape)  # arg_type is the c-type of the input (like int *)
 
-        # TODO: stripping out self, as is done above, should really be abstracted, as it's the same everywhere
+        # TODO: stripping out self, as is done below, should really be abstracted, as it's the same everywhere
         # Get the actual params (stripping out "self" from node.params)
-        param = node.params[1]  # note that params[0] is self
-        param.type = arg_type()  # because logic
-        node.params = [param]  # this basically strips out "self"
+        param = node.params[1]          # note that params[0] is self
+        param.type = arg_type()
+        node.params = [param]           # this basically strips out "self"
 
         # # Alternative to above code; stripping out "self" from node.params
         # node.params[1].type = argtype()
@@ -91,11 +91,11 @@ class XorReductionCBackend(ast.NodeTransformer):
 
         # TODO: below, 'output' should really be (int *) hardcoded, rather than the same
         #       as the input type (which is represented by argtype)
+
         ## Adding the 'output' variable as one of the parameters of type argtype
-        retval = SymbolRef("output",
-                           arg_type())  # retval is a symbol reference to c-variable named "output" of type argtype
-        self.retval = "output"  # 'output' is the name of
-        node.params.append(retval)  # this appends the output parameter to the list of parameters
+        retval = SymbolRef("output", arg_type())  # retval is a symbol reference to c-variable named "output" of type argtype
+        self.retval = "output"                    # 'output' is the name of the value to return
+        node.params.append(retval)                # this appends the output parameter to the list of parameters
         node.defn = list(map(self.visit, node.defn))
         node.defn[0].left.type = arg_type._dtype_.type()
         return node
@@ -103,11 +103,10 @@ class XorReductionCBackend(ast.NodeTransformer):
     def visit_PointsLoop(self, node):
         target = node.target
         return For(
-            # TODO: Not sustainable... what happens i starts at 1?
             Assign(SymbolRef(target, ct.c_int()), Constant(0)),  # int i = 0;
             Lt(SymbolRef(target), Constant(self.arg_cfg.size)),  # 'Lt' = Less than; i < size of array
-            PostInc(SymbolRef(target)),  # i++
-            list(map(self.visit, node.body))  # Recursively call the other nodes
+            PostInc(SymbolRef(target)),                          # i++
+            list(map(self.visit, node.body))                     # Recursively call the other nodes
         )
 
     def visit_Return(self, node):
@@ -146,9 +145,9 @@ class LazySlimmy(LazySpecializedFunction):
         py_ast = py_ast or get_ast(self.apply)
         super(LazySlimmy, self).__init__(py_ast)
 
+
     def args_to_subconfig(self, args):
-        # what happens if you have more than one arg?
-        A = args[0]
+        A = args[0]  # TODO: currently we only support one argument
         return LazySlimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
 
 
@@ -161,7 +160,7 @@ class LazySlimmy(LazySpecializedFunction):
         apply_one.return_type = inner_type
         apply_one.params[0].type = inner_type
         apply_one.params[1].type = inner_type
-        responsible_size = int(len_A / WORK_GROUP_SIZE)
+        responsible_size = int(len_A / WORK_GROUP_SIZE)         # 
         apply_kernel = FunctionDecl(None, "apply_kernel",
                                     params=[SymbolRef("A", pointer()).set_global(),
                                             SymbolRef("output_buf", pointer()).set_global(),
@@ -255,10 +254,11 @@ class RolledSlimmy(LazySpecializedFunction):
         inner_type = A.dtype.type()
         pointer = np.ctypeslib.ndpointer(A.dtype, A.ndim, A.shape)
         apply_one = PyBasicConversions().visit(tree.body[0])
+        
         apply_one.return_type = inner_type
         apply_one.params[0].type = inner_type
-        apply_one.params[1].type = inner_type
-        responsible_size = int(len_A / WORK_GROUP_SIZE)
+        apply_one.params[1].type = inner_type                   
+        responsible_size = int(len_A / WORK_GROUP_SIZE)         # Get the appropriate number of threads for parallelizing
         apply_kernel = FunctionDecl(None, "apply_kernel",
                                     params=[SymbolRef("A", pointer()).set_global(),
                                             SymbolRef("output_buf", pointer()).set_global(),
@@ -299,6 +299,7 @@ class RolledSlimmy(LazySpecializedFunction):
 
         kernel = OclFile("kernel", [apply_one, apply_kernel])
 
+        # Hardcoded OpenCL code to compensate to begin execution of parallelized computation 
         control = StringTemplate(r"""
         #ifdef __APPLE__
         #include <OpenCL/opencl.h>
@@ -415,10 +416,12 @@ class CopyBaseline(LazySpecializedFunction):
         return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
 
 
-
-
-
-# --------------------------------
+#
+### User-Writtern Code ###
+#
+# The code below is written by a USER. This code is meant to be 
+# simple and easy to write
+#
 
 class Baseline(CopyBaseline):
     @staticmethod
@@ -462,8 +465,9 @@ class XorReduction(LazySlimmy):
 
 
 
-
-## MAIN EXECUTION ##
+#
+### Main Execution (currently used for testing) ###
+#
 
 def timeit(f, args):
     a = time.time()
