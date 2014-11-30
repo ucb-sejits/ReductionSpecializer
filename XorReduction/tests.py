@@ -121,13 +121,13 @@ def check_test(test_value, correct_value):
 
 	num_tests += 1
 	if isinstance(test_value, Exception):
-		print bcolors.FAIL + "\t" + u'\u2717'  + "  Test " + str(num_tests) + " failed" + bcolors.GRAY + "\tThrew exception: " + repr(test_value) +  bcolors.ENDC
+		print bcolors.FAIL + "\t" + u'\u2717'  + "   Test " + str(num_tests) + " FAILED" + bcolors.GRAY + "\tThrew exception: " + repr(test_value) +  bcolors.ENDC
 	elif abs(test_value - correct_value) < CORRECTNESS_THRESHOLD:
 		num_correct += 1
 		print bcolors.GREEN + "\t" + u'\u2713' + bcolors.GRAY + "   Test " + str(num_tests) + bcolors.ENDC
 		return True
 	else:
-		print bcolors.FAIL + "\t" + u'\u2717'  + "  Test " + str(num_tests) + " failed" + bcolors.GRAY + "\tExpected " + str(correct_value) + " but got " + str(test_value) +  bcolors.ENDC
+		print bcolors.FAIL + "\t" + u'\u2717'  + "   Test " + str(num_tests) + " FAILED" + bcolors.GRAY + "\tExpected " + str(correct_value) + " but got " + str(test_value) +  bcolors.ENDC
 		return False
 
 def print_final_status():
