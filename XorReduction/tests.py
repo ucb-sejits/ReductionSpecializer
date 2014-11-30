@@ -15,7 +15,6 @@ def run_tests():
 	arr = (np.ones(2**1) * 8).astype(np.float32)
 	check_test(do_test(arr), do_control(arr))
 
-	# FIXME: This tests fails
 	arr = (np.ones(2**2) * 8).astype(np.float32)
 	check_test(do_test(arr), do_control(arr))
 
