@@ -17,7 +17,7 @@ def run_tests():
 
 	# FIXME: This tests fails
 	arr = (np.ones(2^2) * 8).astype(np.float32)
-	# check_test(do_test(arr), do_control(arr))
+	check_test(do_test(arr), do_control(arr))
 
 	arr = (np.ones(2^3) * 8).astype(np.float32)
 	check_test(do_test(arr), do_control(arr))
@@ -102,12 +102,14 @@ def run_tests():
 
 def do_test(arr, work_group_size=None, target_gpu_index=0):
 
-	main.TARGET_GPU = main.devices[target_gpu_index]
-	main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
+	try:
+		main.TARGET_GPU = main.devices[target_gpu_index]
+		main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
 
-	rolled = main.Rolled()
-	return rolled(arr)
-
+		rolled = main.Rolled()
+		return rolled(arr)
+	except Exception as e:
+		return e
 
 def do_control(arr):
 	return np.sum(arr)
@@ -118,19 +120,32 @@ def check_test(test_value, correct_value):
 	global num_correct
 
 	num_tests += 1
-	if abs(test_value - correct_value) < CORRECTNESS_THRESHOLD:
+	if isinstance(test_value, Exception):
+		print bcolors.FAIL + "\t" + u'\u2717'  + "  Test " + str(num_tests) + " failed" + bcolors.GRAY + "\tThrew exception: " + repr(test_value) +  bcolors.ENDC
+	elif abs(test_value - correct_value) < CORRECTNESS_THRESHOLD:
 		num_correct += 1
-		print "Passed Test " + str(num_tests)
+		print bcolors.GREEN + "\t" + u'\u2713' + bcolors.GRAY + "   Test " + str(num_tests) + bcolors.ENDC
 		return True
 	else:
-		print "Test " + str(num_tests) + " FAILED: Expected " + str(correct_value) + " but got " + str(test_value) + "."
+		print bcolors.FAIL + "\t" + u'\u2717'  + "  Test " + str(num_tests) + " failed" + bcolors.GRAY + "\tExpected " + str(correct_value) + " but got " + str(test_value) +  bcolors.ENDC
 		return False
 
 def print_final_status():
 	if num_tests == num_correct:
-		print "ALL " + str(num_tests) + " TESTS PASSED"
+		print bcolors.GREEN + "\tALL " + str(num_tests) + " TESTS PASSED" + bcolors.ENDC
 	else:
-		print "PASSED " + str(num_correct) + " OF " + str(num_tests) + " TESTS"
+		print bcolors.FAIL + "\tPASSED " + str(num_correct) + " OF " + str(num_tests) + " TESTS" + bcolors.ENDC
+
+
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    WARNING = '\033[93m'
+    GRAY = '\033[90m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+
 
 run_tests()
 print_final_status()
