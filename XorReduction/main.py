@@ -73,7 +73,7 @@ class PointsLoop(CtreeNode):
         return str(self.iter_target)
 
 
-class XorReductionFrontend(PyBasicConversions):
+class ReductionFrontend(PyBasicConversions):
     def visit_For(self, node):
         if isinstance(node.iter, ast.Call) and \
                 isinstance(node.iter.func, ast.Attribute) and \
@@ -87,7 +87,7 @@ class XorReductionFrontend(PyBasicConversions):
             return node
 
 
-class XorReductionCBackend(ast.NodeTransformer):
+class ReductionCBackend(ast.NodeTransformer):
     def __init__(self, arg_cfg):
         self.arg_cfg = arg_cfg
         self.retval = None
@@ -130,7 +130,7 @@ class XorReductionCBackend(ast.NodeTransformer):
         return Assign(Deref(SymbolRef(self.retval)), node.value)  # *output = <return value>
 
 
-class ConcreteXorReduction(ConcreteSpecializedFunction):
+class ConcreteReduction(ConcreteSpecializedFunction):
     def __init__(self):
         self.context = cl.clCreateContextFromType()
         self.queue = cl.clCreateCommandQueue(self.context, device=TARGET_GPU)
@@ -155,17 +155,17 @@ class ConcreteXorReduction(ConcreteSpecializedFunction):
         return B[0]
 
 
-class LazySlimmy(LazySpecializedFunction):
+class LazyUnrolledReduction(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
 
     def __init__(self, py_ast=None):
         py_ast = py_ast or get_ast(self.apply)
-        super(LazySlimmy, self).__init__(py_ast)
+        super(LazyUnrolledReduction, self).__init__(py_ast)
 
 
     def args_to_subconfig(self, args):
         A = args[0]  # TODO: currently we only support one argument
-        return LazySlimmy.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
+        return LazyUnrolledReduction.subconfig_type(A.dtype, A.ndim, A.shape, A.size, [])
 
 
     def transform(self, tree, program_config):
@@ -237,7 +237,7 @@ class LazySlimmy(LazySpecializedFunction):
         })
 
         proj = Project([kernel, CFile("generated", [control])])
-        fn = ConcreteXorReduction()
+        fn = ConcreteReduction()
 
         program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
@@ -252,12 +252,12 @@ class LazySlimmy(LazySpecializedFunction):
             yield iter.index
             iter.iternext()
 
-class RolledSlimmy(LazySpecializedFunction):
+class LazyRolledReduction(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
 
     def __init__(self, py_ast=None):
         py_ast = py_ast or get_ast(self.apply)
-        super(RolledSlimmy, self).__init__(py_ast)
+        super(LazyRolledReduction, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
         # what happens if you have more than one arg?
@@ -361,7 +361,7 @@ class RolledSlimmy(LazySpecializedFunction):
         })
 
         proj = Project([kernel, CFile("generated", [control])])
-        fn = ConcreteXorReduction()
+        fn = ConcreteReduction()
 
         program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
@@ -425,7 +425,7 @@ class CopyBaseline(LazySpecializedFunction):
         """, {})
 
         proj = Project([kernel, CFile("generated", [control])])
-        fn = ConcreteXorReduction()
+        fn = ConcreteReduction()
 
         program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
@@ -445,39 +445,73 @@ class Baseline(CopyBaseline):
     def apply(x, y):
         return x + y
 
-class XorOne(LazySlimmy):
-    """Xors elements of the array."""
+#
+# Xor Reduction
+#
+class UnRolledXor(LazyUnrolledReduction):
+    """
+       Xors elements of an input array. Inherits from LazyUnrolledReduction, 
+       so the loop is unrolled. An example is given for how to use this class
+       by calling it on a particular array.
 
+       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
+       >>> unrolled = UnRolledXor()
+       >>> unrolled(arr)                # returns the xor of all elements of arr
+
+    """
     @staticmethod
     def apply(x, y):
         return x ^ y
 
-class UnRolled(LazySlimmy):
 
+class RolledXor(LazyRolledReduction):
+    """
+       Xors elements of an input array. Inherits from LazyRolledReduction, 
+       so the loop is not unrolled. An example is given for how to use this class
+       by calling it on a particular array.
+
+       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
+       >>> rolled = RolledXor()
+       >>> rolled(arr)                  # returns the xor of all elements of arr
+
+    """
     @staticmethod
     def apply(x, y):
-        return x+y
+        return x ^ y
 
-class RolledXor(CopyBaseline):
+#
+# Addition Reduction
+#
+class UnRolledAdd(LazyUnrolledReduction):
+    """
+       Adds the elements of an input array. Inherits from LazyUnrolledReduction, 
+       so the loop is unrolled. An example is given for how to use this class
+       by calling it on a particular array.
+
+       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
+       >>> unrolled = UnRolledAdd()
+       >>> unrolled(arr)                  # returns the sum of all elements of arr
+
+    """
     @staticmethod
     def apply(x, y):
-        return x^y
+        return x + y
 
-class Rolled(RolledSlimmy):
+
+class RolledAdd(LazyRolledReduction):
+    """
+       Adds the elements of an input array. Inherits from LazyRolledReduction, 
+       so the loop is not unrolled. An example is given for how to use this class
+       by calling it on a particular array.
+
+       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
+       >>> rolled = RolledAdd()
+       >>> rolled(arr)                  # returns the sum of all elements of arr
+
+    """
     @staticmethod
     def apply(x, y):
-        return x+y
-
-class XorReduction(LazySlimmy):
-    def kernel(self, inpt):
-        '''
-            Calculates the cumulative XOR of elements in inpt, equivalent to
-            Reduce with XOR
-        '''
-        result = 0
-        for point in self.points(inpt):
-            result = inpt[point] ^ result
-        return result
+        return x + y
 
 
 
@@ -511,19 +545,17 @@ def interleaved_timing(fs, args, iterations):
 
 
 if __name__ == '__main__':
-    device_num = int(sys.argv[1])           # gets the device number from command line args
+    device_num = int(sys.argv[1])                                           # gets the device number from command line args
     TARGET_GPU = devices[device_num]
 
     WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
     size = int(eval(sys.argv[3]))
     print(TARGET_GPU, WORK_GROUP_SIZE)
 
-    #arr = (np.random.rand(int(eval(sys.argv[3])))*8).astype(np.int32)      # used for getting random numbers in your dataset
-    arr = (np.ones(size)*8).astype(np.float32)                              # for the creation of a dataset with all 1's
+    arr = (np.ones(size)*8).astype(np.float32)                              # used for creation of a dataset with all 1's
 
     baseline = Baseline()                                               
-    rolled = Rolled()
-    #unrolled = UnRolled()
+    rolled = RolledAdd()
 
     res = rolled(arr)
     npres = np.sum(arr)
