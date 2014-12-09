@@ -135,9 +135,9 @@ class ConcreteReduction(ConcreteSpecializedFunction):
         self.context = cl.clCreateContextFromType()
         self.queue = cl.clCreateCommandQueue(self.context, device=TARGET_GPU)
 
-    def finalize(self, kernel, tree, entry_name, entry_type):
+    def finalize(self, kernel, tree, entry_name, entry_type, compilation_dir=None):
         self.kernel = kernel
-        self._c_function = self._compile(entry_name, tree, entry_type)
+        self._c_function = self._compile(entry_name, tree, entry_type, compilation_dir=compilation_dir)
         return self
 
     def __call__(self, A):
@@ -366,7 +366,7 @@ class LazyRolledReduction(LazySpecializedFunction):
         program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
         entry_type = ct.CFUNCTYPE(None, cl.cl_command_queue, cl.cl_kernel, cl.cl_mem)
-        return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
+        return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type, compilation_dir=self.config_to_dirname(program_config))
 
 class CopyBaseline(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
