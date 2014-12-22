@@ -135,9 +135,9 @@ class ConcreteReduction(ConcreteSpecializedFunction):
         self.context = cl.clCreateContextFromType()
         self.queue = cl.clCreateCommandQueue(self.context, device=TARGET_GPU)
 
-    def finalize(self, kernel, tree, entry_name, entry_type, compilation_dir=None):
+    def finalize(self, kernel, tree, entry_name, entry_type):
         self.kernel = kernel
-        self._c_function = self._compile(entry_name, tree, entry_type, compilation_dir=compilation_dir)
+        self._c_function = self._compile(entry_name, tree, entry_type)
         return self
 
     def __call__(self, A):
@@ -266,6 +266,7 @@ class LazyRolledReduction(LazySpecializedFunction):
 
 
     def transform(self, tree, program_config):
+        dirname = self.config_to_dirname(program_config)
         A = program_config[0]
         len_A = np.prod(A.shape)
         inner_type = A.dtype.type()
@@ -314,8 +315,6 @@ class LazyRolledReduction(LazySpecializedFunction):
                                     ]
         ).set_kernel()
 
-        kernel = OclFile("kernel", [apply_one, apply_kernel])
-
         # Hardcoded OpenCL code to compensate to begin execution of parallelized computation 
         control = StringTemplate(r"""
         #ifdef __APPLE__
@@ -360,13 +359,20 @@ class LazyRolledReduction(LazySpecializedFunction):
               'runs': Constant(ITERATIONS)
         })
 
-        proj = Project([kernel, CFile("generated", [control])])
+        kernel = OclFile("kernel", [apply_one, apply_kernel])
+        control = CFile("generated", [control])
+        return kernel, control
+
+    def finalize(self, transform_result, program_config):
+        kernel = transform_result['kernel']
+        control = transform_result['generated']
+        proj = Project([kernel, control])
         fn = ConcreteReduction()
 
         program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
         entry_type = ct.CFUNCTYPE(None, cl.cl_command_queue, cl.cl_kernel, cl.cl_mem)
-        return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type, compilation_dir=self.config_to_dirname(program_config))
+        return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
 
 class CopyBaseline(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
@@ -552,7 +558,7 @@ if __name__ == '__main__':
     size = int(eval(sys.argv[3]))
     print(TARGET_GPU, WORK_GROUP_SIZE)
 
-    arr = (np.ones(size)*8).astype(np.float32)                              # used for creation of a dataset with all 1's
+    arr = (np.ones(size)*8).astype(np.float32)                              # used for creation of a dataset with all 8's
 
     baseline = Baseline()                                               
     rolled = RolledAdd()
