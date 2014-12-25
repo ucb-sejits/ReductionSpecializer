@@ -359,24 +359,19 @@ class LazyRolledReduction(LazySpecializedFunction):
               'runs': Constant(ITERATIONS)
         })
 
-        kernel = OclFile("kernel", [apply_one, apply_kernel])
-        control = CFile("generated", [control])
+        ocl_kernel = OclFile("kernel", [apply_one, apply_kernel])
+        c_controller = CFile("generated", [control])
 
-        # creating a namedtuple for unpacking later
-        CodePackage = namedtuple('CodePackage', 'kernel generated')
-        generated_code = CodePackage(kernel, control)
-
-        return generated_code
+        return [ocl_kernel, c_controller]
 
     def finalize(self, transform_result, program_config):
         
-        # unpacking namedtuple
-        kernel = transform_result.kernel
-        control = transform_result.generated
-        proj = Project([kernel, control])
+        ocl_kernel = transform_result[0]
+        c_controller = transform_result[1]
+        proj = Project([ocl_kernel, c_controller])
         fn = ConcreteReduction()
 
-        program = cl.clCreateProgramWithSource(fn.context, kernel.codegen()).build()
+        program = cl.clCreateProgramWithSource(fn.context, ocl_kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
         entry_type = ct.CFUNCTYPE(None, cl.cl_command_queue, cl.cl_kernel, cl.cl_mem)
         return fn.finalize(apply_kernel_ptr, proj, "apply_all", entry_type)
