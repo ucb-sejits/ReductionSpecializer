@@ -361,11 +361,18 @@ class LazyRolledReduction(LazySpecializedFunction):
 
         kernel = OclFile("kernel", [apply_one, apply_kernel])
         control = CFile("generated", [control])
-        return kernel, control
+
+        # creating a namedtuple for unpacking later
+        CodePackage = namedtuple('CodePackage', 'kernel generated')
+        generated_code = CodePackage(kernel, control)
+
+        return generated_code
 
     def finalize(self, transform_result, program_config):
-        kernel = transform_result['kernel']
-        control = transform_result['generated']
+        
+        # unpacking namedtuple
+        kernel = transform_result.kernel
+        control = transform_result.generated
         proj = Project([kernel, control])
         fn = ConcreteReduction()
 
