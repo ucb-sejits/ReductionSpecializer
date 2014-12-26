@@ -11,13 +11,11 @@ num_correct	= 0			# counter for the total number of tests passed
 
 
 def run_tests():
-
 	for i in range(28):
 		arr = (np.ones(2**i) * 8).astype(np.float32)
 		test_val, test_time = do_test(arr)
 		correct_val, control_time = do_control(arr, np.sum)
 		check_test(test_val, correct_val, test_time, control_time)
-
 
 
 def do_test(arr, work_group_size=None, target_gpu_index=0):

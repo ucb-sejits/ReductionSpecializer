@@ -325,15 +325,6 @@ class LazyRolledReduction(LazySpecializedFunction):
 
         #include <stdio.h>
 
-        #include <sys/time.h>
-
-        double read_timer() {
-            struct timeval t;
-            struct timezone tz;
-            gettimeofday(&t, &tz);
-            return (double)t.tv_sec + (double)t.tv_usec * 0.000001;
-        }
-
         void apply_all(cl_command_queue queue, cl_kernel kernel, cl_mem buf, cl_mem out_buf) {
             size_t global = $local;
             size_t local = $local;
@@ -341,22 +332,11 @@ class LazyRolledReduction(LazySpecializedFunction):
             clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf);
             clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_buf);
             clSetKernelArg(kernel, 2, local * sizeof(int), NULL);
-            double t0 = read_timer();
             clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
-            double t1 = read_timer();
-            for (int run = 0; run < $runs; run++){
-                clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
-            }
-            double t2 = read_timer();
-            // printf("Initial Run: %12.9f \n", t1 - t0);
-            if ($runs){
-                printf("Average time: %12.9f \n", (t2 - t1) / $runs);
-            }
         }
         """, {'local': Constant(WORK_GROUP_SIZE),
               'n': Constant((len_A + WORK_GROUP_SIZE - (len_A % WORK_GROUP_SIZE))/2),
               'length': Constant(len_A),
-              'runs': Constant(ITERATIONS)
         })
 
         ocl_kernel = OclFile("kernel", [apply_one, apply_kernel])
@@ -365,7 +345,6 @@ class LazyRolledReduction(LazySpecializedFunction):
         return [ocl_kernel, c_controller]
 
     def finalize(self, transform_result, program_config):
-        
         ocl_kernel = transform_result[0]
         c_controller = transform_result[1]
         proj = Project([ocl_kernel, c_controller])
@@ -379,9 +358,6 @@ class LazyRolledReduction(LazySpecializedFunction):
 class CopyBaseline(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
 
-    def __init__(self, py_ast=None):
-        py_ast = py_ast or get_ast(self.apply)
-        super(CopyBaseline, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
         # what happens if you have more than one arg?
@@ -521,8 +497,6 @@ class RolledAdd(LazyRolledReduction):
     def apply(x, y):
         return x + y
 
-
-
 #
 ### Main Execution (currently used for testing) ###
 #
@@ -550,7 +524,6 @@ def interleaved_timing(fs, args, iterations):
             times[f].append(time.time() - a)
         i -= 1
     return {f: sum(t)/iterations for f,t in times.items()}
-
 
 if __name__ == '__main__':
     device_num = int(sys.argv[1])                                           # gets the device number from command line args
