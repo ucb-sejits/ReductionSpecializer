@@ -14,9 +14,8 @@ def run_tests():
 	for i in range(28):
 		arr = (np.ones(2**i) * 8).astype(np.float32)
 		test_val, test_time = do_test(arr)
-		correct_val, control_time = do_control(arr, np.sum)
+		correct_val, control_time = do_control(arr, np.add.reduce)
 		check_test(test_val, correct_val, test_time, control_time)
-
 
 def do_test(arr, work_group_size=None, target_gpu_index=0):
 
@@ -24,7 +23,8 @@ def do_test(arr, work_group_size=None, target_gpu_index=0):
 		main.TARGET_GPU = main.devices[target_gpu_index]
 		main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
 
-		rolled = main.RolledAdd()
+		RolledClass = main.LazyRolledReduction.from_function(main.add, "RolledClass")	# generate a class
+		rolled = RolledClass()															# get the apply all method for the class
 
 		start = time.time()
 		result =  rolled(arr)

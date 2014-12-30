@@ -416,78 +416,15 @@ class CopyBaseline(LazySpecializedFunction):
 # simple and easy to write
 #
 
-class Baseline(CopyBaseline):
-    @staticmethod
-    def apply(x, y):
-        return x + y
-
-#
-# Xor Reduction
-#
-class UnRolledXor(LazyUnrolledReduction):
+def add(x, y):
     """
-       Xors elements of an input array. Inherits from LazyUnrolledReduction, 
-       so the loop is unrolled. An example is given for how to use this class
-       by calling it on a particular array.
+       Kernel method to add up all the elements in an array. 
 
-       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
-       >>> unrolled = UnRolledXor()
-       >>> unrolled(arr)                # returns the xor of all elements of arr
-
+       >>> RolledClass = LazyRolledClassReduction.from_function(add, "RolledClass")
+       >>> rolled = RolledClass()
+       >>> rolled(arr)                     # returns the sum of all elements of arr
     """
-    @staticmethod
-    def apply(x, y):
-        return x ^ y
-
-
-class RolledXor(LazyRolledReduction):
-    """
-       Xors elements of an input array. Inherits from LazyRolledReduction, 
-       so the loop is not unrolled. An example is given for how to use this class
-       by calling it on a particular array.
-
-       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
-       >>> rolled = RolledXor()
-       >>> rolled(arr)                  # returns the xor of all elements of arr
-
-    """
-    @staticmethod
-    def apply(x, y):
-        return x ^ y
-
-#
-# Addition Reduction
-#
-class UnRolledAdd(LazyUnrolledReduction):
-    """
-       Adds the elements of an input array. Inherits from LazyUnrolledReduction, 
-       so the loop is unrolled. An example is given for how to use this class
-       by calling it on a particular array.
-
-       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
-       >>> unrolled = UnRolledAdd()
-       >>> unrolled(arr)                  # returns the sum of all elements of arr
-
-    """
-    @staticmethod
-    def apply(x, y):
-        return x + y
-
-
-class RolledAdd(LazyRolledReduction):
-    """
-       Adds the elements of an input array. Inherits from LazyRolledReduction, 
-       so the loop is not unrolled. An example is given for how to use this class
-       by calling it on a particular array.
-
-       >>> arr = [7, 8, 5, 6, 3, 1, 5, 2]
-       >>> rolled = RolledAdd()
-       >>> rolled(arr)                  # returns the sum of all elements of arr
-
-    """
-    @staticmethod
-    def apply(x, y):
-        return x + y
+    return x + y
 
 #
 ### Main Execution (currently used for testing) ###
@@ -526,12 +463,12 @@ if __name__ == '__main__':
     print(TARGET_GPU, WORK_GROUP_SIZE)
 
     arr = (np.ones(size)*8).astype(np.float32)                              # used for creation of a dataset with all 8's
-
-    baseline = Baseline()                                               
-    rolled = RolledAdd()
+                                             
+    RolledClass = LazyRolledClassReduction.from_function(add, "RolledClass")
+    rolled = RolledClass()
 
     res = rolled(arr)
-    npres = np.sum(arr)
+    npres = np.add.reduce(arr)
     print('Rolled Code: ', res, type(res), 'Numpy: ', npres, type(npres), abs(npres - res) < 1e-8)
 
 
