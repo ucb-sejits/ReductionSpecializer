@@ -158,10 +158,6 @@ class ConcreteReduction(ConcreteSpecializedFunction):
 class LazyUnrolledReduction(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
 
-    def __init__(self, py_ast=None):
-        py_ast = py_ast or get_ast(self.apply)
-        super(LazyUnrolledReduction, self).__init__(py_ast)
-
 
     def args_to_subconfig(self, args):
         A = args[0]  # TODO: currently we only support one argument
@@ -254,10 +250,6 @@ class LazyUnrolledReduction(LazySpecializedFunction):
 
 class LazyRolledReduction(LazySpecializedFunction):
     subconfig_type = namedtuple('subconfig', ['dtype', 'ndim', 'shape', 'size', 'flags'])
-
-    def __init__(self, py_ast=None):
-        py_ast = py_ast or get_ast(self.apply)
-        super(LazyRolledReduction, self).__init__(py_ast)
 
     def args_to_subconfig(self, args):
         # what happens if you have more than one arg?
