@@ -167,7 +167,7 @@ class LazyUnrolledReduction(LazySpecializedFunction):
         ocl_kernel = transform_result[0]
         c_controller = transform_result[1]
         proj = Project([ocl_kernel, c_controller])
-        fn = ConcreteReduction()
+        fn = ConcreteReduction()                        # define the ConcreteSpecializeFunction subclass to use
 
         program = cl.clCreateProgramWithSource(fn.context, ocl_kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']
@@ -266,7 +266,7 @@ class LazyRolledReduction(LazySpecializedFunction):
         ocl_kernel = transform_result[0]
         c_controller = transform_result[1]
         proj = Project([ocl_kernel, c_controller])
-        fn = ConcreteReduction()
+        fn = ConcreteReduction()                        # define the ConcreteSpecializeFunction subclass to use
 
         program = cl.clCreateProgramWithSource(fn.context, ocl_kernel.codegen()).build()
         apply_kernel_ptr = program['apply_kernel']

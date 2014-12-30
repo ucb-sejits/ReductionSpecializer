@@ -30,7 +30,7 @@ def do_test(arr, work_group_size=None, target_gpu_index=0):
 
 		# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
 		# UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
-		# reducer = UnRolledClass()															# get the apply all method for the class
+		# reducer = UnRolledClass()																# get the apply all method for the class
 
 
 		start = time.time()
