@@ -1,4 +1,4 @@
-ReductionSpecializer
+[SEJITS] ReductionSpecializer
 ====================
 *An example specializer built on ASPIRE's SEJITS framework*
 
