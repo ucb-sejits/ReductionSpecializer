@@ -283,7 +283,8 @@ class LazyRolledReduction(LazySpecializedFunction):
 
 def add(x, y):
     """
-       Kernel method to add up all the elements in an array. 
+       Kernel method to add up all the elements in an array. An example is given in the
+       doctests.
 
        >>> RolledClass = LazyRolledClassReduction.from_function(add, "RolledClass")
        >>> rolled = RolledClass()
@@ -291,50 +292,29 @@ def add(x, y):
     """
     return x + y
 
-#
-### Main Execution (currently used for testing) ###
-#
 
-def timeit(f, args):
-    a = time.time()
-    f(*args)
-    return time.time() - a
+## Setup to use command-line arguments ##
+device_num = int(sys.argv[1])                                               # gets the device number from command line args
+TARGET_GPU = devices[device_num]
 
-def average_time(f, args, iterations):
-    a = time.time()
-    i = iterations
-    while i:
-        f(*args)
-        i -= 1
-    return (time.time() - a) / iterations
+WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
+size = int(eval(sys.argv[3]))
 
-def interleaved_timing(fs, args, iterations):
-    times = {f:[] for f in fs}
-    i = iterations
-    while i:
-        for f in fs:
-            a = time.time()
-            f(*args)
-            times[f].append(time.time() - a)
-        i -= 1
-    return {f: sum(t)/iterations for f,t in times.items()}
+## Sample dataset creation ##
+sample_data = (np.ones(size)*8).astype(np.float32)                          # creating a dataset with all 8's
+                                         
+## Rolled Reduction Example ##
+RolledClass = LazyRolledReduction.from_function(add, "RolledClass")         # generate subclass with the add() method
+reducer = RolledClass()                                                     # create your reducer               
+sejits_result = reducer(sample_data)                                        # the result of the SEJITS reduction
 
-if __name__ == '__main__':
-    device_num = int(sys.argv[1])                                           # gets the device number from command line args
-    TARGET_GPU = devices[device_num]
+## Running the control (using numpy) for testing ##
+numpy_result = np.add.reduce(sample_data)
 
-    WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
-    size = int(eval(sys.argv[3]))
-    print(TARGET_GPU, WORK_GROUP_SIZE)
-
-    arr = (np.ones(size)*8).astype(np.float32)                              # used for creation of a dataset with all 8's
-                                             
-    RolledClass = LazyRolledClassReduction.from_function(add, "RolledClass")
-    rolled = RolledClass()
-
-    res = rolled(arr)
-    npres = np.add.reduce(arr)
-    print('Rolled Code: ', res, type(res), 'Numpy: ', npres, type(npres), abs(npres - res) < 1e-8)
+## Printing out the result ##
+print('SEJITS RESULT: \t', sejits_result, " of ", type(sejits_result))
+print ('NUMPY RESULT: \t', numpy_result, " of ", type(numpy_result))
+print ('SUCCESS?: \t', abs(numpy_result - sejits_result) < 1e-8)
 
 
 
