@@ -191,6 +191,7 @@ class LazyRolledReduction(LazySpecializedFunction):
         pointer = np.ctypeslib.ndpointer(A.dtype, A.ndim, A.shape)
         apply_one = PyBasicConversions().visit(tree.body[0])
         
+        apply_one.name = 'apply'
         apply_one.return_type = inner_type
         apply_one.params[0].type = inner_type
         apply_one.params[1].type = inner_type                   
@@ -211,7 +212,7 @@ class LazyRolledReduction(LazySpecializedFunction):
                                             PostInc(SymbolRef('offset')),
                                             [
                                                 Assign(SymbolRef('localResult'),
-                                                       FunctionCall('apply', [SymbolRef('localResult'),
+                                                       FunctionCall(apply_one.name, [SymbolRef('localResult'),
                                                                               ArrayRef(SymbolRef('A'),
                                                                                        Add(SymbolRef('globalId'),
                                                                                            Mul(SymbolRef('offset'),
@@ -225,7 +226,7 @@ class LazyRolledReduction(LazySpecializedFunction):
                                             barrier(CLK_LOCAL_MEM_FENCE()),
                                         If(Eq(SymbolRef('globalId'), Constant(0)),
                                            [
-                                                Assign(SymbolRef('localResult'), FunctionCall(SymbolRef('apply'), [SymbolRef('localResult'),
+                                                Assign(SymbolRef('localResult'), FunctionCall(SymbolRef(apply_one.name), [SymbolRef('localResult'),
                                                                                                                    ArrayRef(SymbolRef('localData'),Constant(x))]))
                                                 for x in range(1, WORK_GROUP_SIZE)
                                            ] + [Assign(ArrayRef(SymbolRef('output_buf'), Constant(0)), SymbolRef('localResult'))]
@@ -328,8 +329,9 @@ if __name__ == '__main__':
     print(TARGET_GPU, WORK_GROUP_SIZE)
 
     arr = (np.ones(size)*8).astype(np.float32)                              # used for creation of a dataset with all 8's
-                                             
-    RolledClass = LazyRolledClassReduction.from_function(add, "RolledClass")
+                        
+    sum_kernel = lambda x, y: x + y                      
+    RolledClass = LazyRolledReduction.from_function(sum_kernel, "RolledClass")
     rolled = RolledClass()
 
     res = rolled(arr)
