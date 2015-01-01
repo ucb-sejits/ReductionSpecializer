@@ -24,14 +24,14 @@ def do_test(arr, work_group_size=None, target_gpu_index=0):
 		main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
 
 		# For testing reduction without loop unrolling (LazyRolledReduction)
-		RolledClass = main.LazyRolledReduction.from_function(main.add, "RolledClass")	# generate a class
+		adder = lambda x, y: x + y
+		RolledClass = main.LazyRolledReduction.from_function(adder, "RolledClass")	# generate a class
 		reducer = RolledClass()															# get the apply all method for the class
 
-
 		# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
+		# adder = lambda x, y: x + y
 		# UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
 		# reducer = UnRolledClass()																# get the apply all method for the class
-
 
 		start = time.time()
 		result =  reducer(arr)

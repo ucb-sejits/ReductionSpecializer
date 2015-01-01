@@ -293,41 +293,43 @@ def add(x, y):
     """
     return x + y
 
-## Setup to use command-line arguments ##
-device_num = int(sys.argv[1])                                               # gets the device number from command line args
-TARGET_GPU = devices[device_num]
 
-WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
-size = int(eval(sys.argv[3]))
+if __name__ == '__main__':
+    ## Setup to use command-line arguments ##
+    device_num = int(sys.argv[1])                                               # gets the device number from command line args
+    TARGET_GPU = devices[device_num]
 
-## Sample dataset creation ##
-sample_data = (np.ones(size)*8).astype(np.float32)                          # creating a dataset with all 8's
-  
-##################################################################################                                       
-## EXAMPLE 1: Rolled Reduction Example (using the add() function defined above) ##
-##################################################################################
-RolledClass = LazyRolledReduction.from_function(add, "RolledClass")         # generate subclass with the add(x, y) method, defined above
-reducer_conventional = RolledClass()                                        # create your reducer             
-sejits_result_conventional = reducer_conventional(sample_data)              # the result of the SEJITS reduction
+    WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
+    size = int(eval(sys.argv[3]))
 
-
-###################################################################                                       
-## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
-###################################################################                                       
-sum_kernel = lambda x, y: x + y                                             # create your lambda function
-RolledClass = LazyRolledReduction.from_function(sum_kernel, "RolledClass")  # generate subclass with the sum_kernel() lambda function we just defined
-reducer_lambda = RolledClass()                                              # create your reducer             
-sejits_result_lambda = reducer_lambda(sample_data)                          # the result of the SEJITS reduction
+    ## Sample dataset creation ##
+    sample_data = (np.ones(size)*8).astype(np.float32)                          # creating a dataset with all 8's
+      
+    ##################################################################################                                       
+    ## EXAMPLE 1: Rolled Reduction Example (using the add() function defined above) ##
+    ##################################################################################
+    RolledClass = LazyRolledReduction.from_function(add, "RolledClass")         # generate subclass with the add(x, y) method, defined above
+    reducer_conventional = RolledClass()                                        # create your reducer             
+    sejits_result_conventional = reducer_conventional(sample_data)              # the result of the SEJITS reduction
 
 
-## Running the control (using numpy) for testing ##
-numpy_result = np.add.reduce(sample_data)
+    ###################################################################                                       
+    ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
+    ###################################################################                                       
+    sum_kernel = lambda x, y: x + y                                             # create your lambda function
+    RolledClass = LazyRolledReduction.from_function(sum_kernel, "RolledClass")  # generate subclass with the sum_kernel() lambda function we just defined
+    reducer_lambda = RolledClass()                                              # create your reducer             
+    sejits_result_lambda = reducer_lambda(sample_data)                          # the result of the SEJITS reduction
 
-## Printing out the result ##
-print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
-print('SEJITS RESULT (Conventional): \t', sejits_result_conventional, " of ", type(sejits_result_conventional))
-print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
-print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
+
+    ## Running the control (using numpy) for testing ##
+    numpy_result = np.add.reduce(sample_data)
+
+    ## Printing out the result ##
+    print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
+    print('SEJITS RESULT (Conventional): \t', sejits_result_conventional, " of ", type(sejits_result_conventional))
+    print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
+    print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
 
 
 
