@@ -29,6 +29,7 @@ that are currently included in the *master* branch of this repository.
 - [X] Ability to have multiple `LazySpecializedFunction` subclasses use the same `ConcreteSpecializedFunction` subclass
 - [X] Persistent Caching improvements (drastic speedup between the 1st run of a particular data set size and subsequent runs)
 - [X] ctree syntax and usage in `LazySpecializedFunction.transform()` (in a subclass of `LazySpecializedFunction`)
+- [X] Lambda expression syntax for concise kernel functions
 
 ### Simplicity of End-User Code ###
 
@@ -51,7 +52,11 @@ def add(x, y):
     return x + y
 ```
 Very simple; note that we're only defining a method that takes in two arguments, not the entire array. This is what is known
-as a **kernel** function that we will pass into the SEJITS framework so that it knows how to operate on our `dataset`.
+as a **kernel** function that we will pass into the SEJITS framework so that it knows how to operate on our `dataset`. We could also do this using a **lambda expression**, to make our code more concise:
+
+```
+    add = lambda x, y: x + y      # be sure that you assign your lambda expression to a variable, as we did here
+```
 
 Now, all we have to do is make a few calls into the SEJITS specializer that has been written for us. You'll notice that in
 `main.py` of this repository, `LazyRolledReduction` is one of the subclasses of `LazySpecializedFunction` (this is something
