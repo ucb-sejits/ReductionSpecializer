@@ -55,7 +55,7 @@ Very simple; note that we're only defining a method that takes in two arguments,
 as a **kernel** function that we will pass into the SEJITS framework so that it knows how to operate on our `dataset`. We could also do this using a **lambda expression**, to make our code more concise:
 
 ```
-    add = lambda x, y: x + y      # be sure that you assign your lambda expression to a variable, as we did here
+add = lambda x, y: x + y      # be sure that you assign your lambda expression to a variable, as we did here
 ```
 
 Now, all we have to do is make a few calls into the SEJITS specializer that has been written for us. You'll notice that in
