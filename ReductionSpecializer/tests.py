@@ -19,27 +19,29 @@ def run_tests():
 
 def do_test(arr, work_group_size=None, target_gpu_index=0):
 
-	try:
-		main.TARGET_GPU = main.devices[target_gpu_index]
-		main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
+    try:
+        main.TARGET_GPU = main.devices[target_gpu_index]
+        main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
 
-		# For testing reduction without loop unrolling (LazyRolledReduction)
-		adder = lambda x, y: x + y
-		RolledClass = main.LazyRolledReduction.from_function(adder, "RolledClass")	# generate a class
-		reducer = RolledClass()															# get the apply all method for the class
+        # For testing reduction without loop unrolling (LazyRolledReduction)
+        def adder(x,y):
+            return x + y
 
-		# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
-		# adder = lambda x, y: x + y
-		# UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
-		# reducer = UnRolledClass()																# get the apply all method for the class
+        RolledClass = main.LazyRolledReduction.from_function(adder, "RolledClass")	# generate a class
+        reducer = RolledClass()															# get the apply all method for the class
 
-		start = time.time()
-		result =  reducer(arr)
-		finish = time.time()
+    # For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
+    # adder = lambda x, y: x + y
+    # UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
+    # reducer = UnRolledClass()																# get the apply all method for the class
 
-		return result, finish - start
-	except Exception as e:
-		return e, time.time() - start
+        start = time.time()
+        result =  reducer(arr)
+        finish = time.time()
+
+        return result, finish - start
+    except Exception as e:
+        return e, time.time() - start
 
 def do_control(arr, func):
 

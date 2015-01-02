@@ -18,7 +18,7 @@ specializer XorReduction
 
 from __future__ import print_function, division
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
-from ctree.frontend import get_ast
+from ctree.frontend import get_ast, dump
 from ctree import browser_show_ast
 from ctree.transformations import PyBasicConversions
 from ctree.nodes import CtreeNode, Project
@@ -260,7 +260,6 @@ class LazyRolledReduction(LazySpecializedFunction):
 
         ocl_kernel = OclFile("kernel", [apply_one, apply_kernel])
         c_controller = CFile("generated", [control])
-
         return [ocl_kernel, c_controller]
 
     def finalize(self, transform_result, program_config):
@@ -316,20 +315,20 @@ if __name__ == '__main__':
     ###################################################################                                       
     ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
     ###################################################################                                       
-    sum_kernel = lambda x, y: x + y                                             # create your lambda function
-    RolledClass = LazyRolledReduction.from_function(sum_kernel, "RolledClass")  # generate subclass with the sum_kernel() lambda function we just defined
-    reducer_lambda = RolledClass()                                              # create your reducer             
-    sejits_result_lambda = reducer_lambda(sample_data)                          # the result of the SEJITS reduction
+    # sum_kernel = lambda x, y: x + y                                             # create your lambda function
+    # RolledClass = LazyRolledReduction.from_function(sum_kernel, "RolledClass")  # generate subclass with the sum_kernel() lambda function we just defined
+    # reducer_lambda = RolledClass()                                              # create your reducer
+    # sejits_result_lambda = reducer_lambda(sample_data)                          # the result of the SEJITS reduction
 
 
     ## Running the control (using numpy) for testing ##
     numpy_result = np.add.reduce(sample_data)
 
     ## Printing out the result ##
-    print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
+#    print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
     print('SEJITS RESULT (Conventional): \t', sejits_result_conventional, " of ", type(sejits_result_conventional))
     print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
-    print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
+#    print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
 
 
 
