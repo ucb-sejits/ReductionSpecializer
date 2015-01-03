@@ -11,35 +11,70 @@ num_correct	= 0			# counter for the total number of tests passed
 
 
 def run_tests():
+
+	print "\n\nTests with conventional function definitions\n"
 	for i in range(28):
 		arr = (np.ones(2**i) * 8).astype(np.float32)
-		test_val, test_time = do_test(arr)
+		test_val, test_time = do_test_conventional(arr)
 		correct_val, control_time = do_control(arr, np.add.reduce)
 		check_test(test_val, correct_val, test_time, control_time)
 
-def do_test(arr, work_group_size=None, target_gpu_index=0):
+	print "\nTests with lambda function definitions\n"
+	for i in range(28):
+		arr = (np.ones(2**i) * 8).astype(np.float32)
+		test_val, test_time = do_test_lambda(arr)
+		correct_val, control_time = do_control(arr, np.add.reduce)
+		check_test(test_val, correct_val, test_time, control_time)
 
-	try:
-		main.TARGET_GPU = main.devices[target_gpu_index]
-		main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
+def do_test_lambda(arr, work_group_size=None, target_gpu_index=0):
 
-		# For testing reduction without loop unrolling (LazyRolledReduction)
-		adder = lambda x, y: x + y
-		RolledClass = main.LazyRolledReduction.from_function(adder, "RolledClass")	# generate a class
-		reducer = RolledClass()															# get the apply all method for the class
+    try:
+    	main.TARGET_GPU = main.devices[target_gpu_index]
+    	main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
 
-		# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
-		# adder = lambda x, y: x + y
-		# UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
-		# reducer = UnRolledClass()																# get the apply all method for the class
+        
+    	adder = lambda x, y: x + y
 
-		start = time.time()
-		result =  reducer(arr)
-		finish = time.time()
+    	# For testing reduction without loop unrolling (LazyRolledReduction)
+        RolledClassLambda = main.LazyRolledReduction.from_function(adder, "RolledClassLambda")	# generate a class
+        reducer = RolledClassLambda()															# get the apply all method for the class
 
-		return result, finish - start
-	except Exception as e:
-		return e, time.time() - start
+    	# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
+    	# UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
+    	# reducer = UnRolledClass()																# get the apply all method for the class
+
+        start = time.time()
+        result =  reducer(arr)
+        finish = time.time()
+
+        return result, finish - start
+    except Exception as e:
+        return e, time.time() - start
+
+def do_test_conventional(arr, work_group_size=None, target_gpu_index=0):
+
+    try:
+    	main.TARGET_GPU = main.devices[target_gpu_index]
+    	main.WORK_GROUP_SIZE = work_group_size or main.TARGET_GPU.max_work_group_size
+
+    	def adder(x, y):
+    		return x + y
+
+    	# For testing reduction without loop unrolling (LazyRolledReduction)
+        RolledClassConventional = main.LazyRolledReduction.from_function(adder, "RolledClassConventional")	# generate a class
+        reducer = RolledClassConventional()																	# get the apply all method for the class
+
+    	# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
+    	# UnRolledClassConventional = main.LazyUnrolledReduction.from_function(adder, "UnRolledClassConventional")	# generate a class
+    	# reducer = UnRolledClassConventional()																		# get the apply all method for the class
+
+        start = time.time()
+        result =  reducer(arr)
+        finish = time.time()
+
+        return result, finish - start
+    except Exception as e:
+        return e, time.time() - start
 
 def do_control(arr, func):
 

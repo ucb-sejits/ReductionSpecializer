@@ -18,7 +18,7 @@ specializer XorReduction
 
 from __future__ import print_function, division
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
-from ctree.frontend import get_ast
+from ctree.frontend import get_ast, dump
 from ctree import browser_show_ast
 from ctree.transformations import PyBasicConversions
 from ctree.nodes import CtreeNode, Project
@@ -190,8 +190,8 @@ class LazyRolledReduction(LazySpecializedFunction):
         len_A = np.prod(A.shape)
         data_type = get_c_type_from_numpy_dtype(A.dtype)        # Get the ctype class for the data type for the parameters
         pointer = np.ctypeslib.ndpointer(A.dtype, A.ndim, A.shape)
-        apply_one = PyBasicConversions().visit(tree.body[0])
-        
+        apply_one = PyBasicConversions().visit(tree.body[0])      
+          
         apply_one.name = 'apply'                                # Naming our kernel method
 
         # Assigning a data_type instance for the  #
@@ -268,7 +268,6 @@ class LazyRolledReduction(LazySpecializedFunction):
 
         ocl_kernel = OclFile("kernel", [apply_one, apply_kernel])
         c_controller = CFile("generated", [control])
-
         return [ocl_kernel, c_controller]
 
     def finalize(self, transform_result, program_config):
@@ -298,7 +297,7 @@ def add(x, y):
        >>> rolled = RolledClass()
        >>> rolled(arr)                     # returns the sum of all elements of arr
     """
-    x, y = x + y, x - y
+    # x, y = x + y, x - y
     # adam = 5
     return x + y
 
@@ -324,48 +323,24 @@ if __name__ == '__main__':
 
     ###################################################################                                       
     ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
-    # ###################################################################                                       
-    # sum_kernel = lambda x, y: x + y                                                         # create your lambda function
-    # RolledClassLambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
-    # reducer_lambda = RolledClassLambda()                                                    # create your reducer             
-    # sejits_result_lambda = reducer_lambda(sample_data)                                      # the result of the SEJITS reduction
+    ###################################################################                                       
+    sum_kernel = lambda x, y: x + y                                                         # create your lambda function
+    RolledClassLambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
+    reducer_lambda = RolledClassLambda()                                                    # create your reducer             
+    sejits_result_lambda = reducer_lambda(sample_data)                                      # the result of the SEJITS reduction
+
 
 
     ## Running the control (using numpy) for testing ##
     numpy_result = np.add.reduce(sample_data)
 
     ## Printing out the result ##
-    # print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
+    print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
     print('SEJITS RESULT (Conventional): \t', sejits_result_conventional, " of ", type(sejits_result_conventional))
     print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
-    # print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
+    print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
 
 
-    # @staticmethod
-    # def __get_c_type(dtype_specified):
-    #     '''Get the ctype corresponding to a
-
-    #     If a is a string or dtype, convert it to a ctypes type.
-    #     If a is an ndarray, convert a.dtype to a ctypes type.
-    #     '''
-    #     typemap = {}
-    #     for t in (c_byte, c_short, c_int, c_long, c_longlong):
-    #         typemap["<i%s" % sizeof(t)] = t.__ctype_le__
-    #         typemap[">i%s" % sizeof(t)] = t.__ctype_be__
-    #     for t in (c_ubyte, c_ushort, c_uint, c_ulong, c_ulonglong):
-    #         typemap["<u%s" % sizeof(t)] = t.__ctype_le__
-    #         typemap[">u%s" % sizeof(t)] = t.__ctype_be__
-    #     for t in (c_float, c_double):
-    #         typemap["<f%s" % sizeof(t)] = t.__ctype_le__
-    #         typemap[">f%s" % sizeof(t)] = t.__ctype_be__
-    #     typemap["|b1"] = c_bool
-    #     typemap["|i1"] = c_byte
-    #     typemap["|u1"] = c_ubyte
-
-    #     if dtype_specified.descr[0][1] in typemap:
-    #         return typemap[dtype_specified.descr[0][1]]
-    #     else:
-    #         return None
 
 
 
