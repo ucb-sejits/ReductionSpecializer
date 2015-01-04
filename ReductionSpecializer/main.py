@@ -96,7 +96,7 @@ class LazyUnrolledReduction(LazySpecializedFunction):
     def transform(self, tree, program_config):
         A = program_config[0]
         len_A = np.prod(A.shape)
-        inner_type = get_ctype(A.dtype)()
+        inner_type = get_c_type_from_numpy_dtype(A.dtype)()
         pointer = np.ctypeslib.ndpointer(A.dtype, A.ndim, A.shape)
         apply_one = PyBasicConversions().visit(tree.body[0])
         apply_one.return_type = inner_type
@@ -190,7 +190,7 @@ class LazyRolledReduction(LazySpecializedFunction):
         len_A = np.prod(A.shape)
         data_type = get_c_type_from_numpy_dtype(A.dtype)        # Get the ctype class for the data type for the parameters
         pointer = np.ctypeslib.ndpointer(A.dtype, A.ndim, A.shape)
-        apply_one = PyBasicConversions().visit(tree.body[0])      
+        apply_one = PyBasicConversions().visit(tree).find(FunctionDecl)
           
         apply_one.name = 'apply'                                # Naming our kernel method
 
@@ -326,7 +326,7 @@ if __name__ == '__main__':
     ###################################################################                                       
     sum_kernel = lambda x, y: x + y                                                         # create your lambda function
     RolledClassLambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
-    reducer_lambda = RolledClassLambda()                                                    # create your reducer             
+    reducer_lambda = RolledClassLambda()                                                    # create your reducer
     sejits_result_lambda = reducer_lambda(sample_data)                                      # the result of the SEJITS reduction
 
 
