@@ -313,25 +313,26 @@ if __name__ == '__main__':
     ## Sample dataset creation ##
     sample_data = (np.ones(size)*8).astype(np.float32)                          # creating a dataset with all 8's
       
-    ##################################################################################                                       
-    ## EXAMPLE 1: Rolled Reduction Example (using the add() function defined above) ##
-    ##################################################################################
-    RolledClass = LazyRolledReduction.from_function(add, "RolledClass")         # generate subclass with the add(x, y) method, defined above
-    reducer_conventional = RolledClass()                                        # create your reducer             
-    sejits_result_conventional = reducer_conventional(sample_data)              # the result of the SEJITS reduction
-
-
-    ###################################################################                                       
-    ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
-    ###################################################################                                       
+    # ##################################################################################
+    # ## EXAMPLE 1: Rolled Reduction Example (using the add() function defined above) ##
+    # ##################################################################################
+    # RolledClass = LazyRolledReduction.from_function(add, "RolledClass")         # generate subclass with the add(x, y) method, defined above
+    # reducer_conventional = RolledClass()                                        # create your reducer
+    # sejits_result_conventional = reducer_conventional(sample_data)              # the result of the SEJITS reduction
+    conventional_reducer = LazyRolledReduction.from_function(add, "RolledClass")
+    sejits_result_conventional = conventional_reducer(sample_data)
+    #
+    # ###################################################################
+    # ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
+    # ###################################################################
     sum_kernel = lambda x, y: x + y                                                         # create your lambda function
-    RolledClassLambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
-    reducer_lambda = RolledClassLambda()                                                    # create your reducer
+    reducer_lambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
+    # reducer_lambda = RolledClassLambda()                                                    # create your reducer
     sejits_result_lambda = reducer_lambda(sample_data)                                      # the result of the SEJITS reduction
-
-
-
-    ## Running the control (using numpy) for testing ##
+    #
+    #
+    #
+    # ## Running the control (using numpy) for testing ##
     numpy_result = np.add.reduce(sample_data)
 
     ## Printing out the result ##
