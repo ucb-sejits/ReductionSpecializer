@@ -36,8 +36,8 @@ def do_test_lambda(arr, work_group_size=None, target_gpu_index=0):
     	adder = lambda x, y: x + y
 
     	# For testing reduction without loop unrolling (LazyRolledReduction)
-        RolledClassLambda = main.LazyRolledReduction.from_function(adder, "RolledClassLambda")	# generate a class
-        reducer = RolledClassLambda()															# get the apply all method for the class
+        reducer = main.LazyRolledReduction.from_function(adder, "RolledClassLambda")	# generate a class
+        															# get the apply all method for the class
 
     	# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
     	# UnRolledClass = main.LazyUnrolledReduction.from_function(main.add, "UnRolledClass")	# generate a class
@@ -61,8 +61,8 @@ def do_test_conventional(arr, work_group_size=None, target_gpu_index=0):
     		return x + y
 
     	# For testing reduction without loop unrolling (LazyRolledReduction)
-        RolledClassConventional = main.LazyRolledReduction.from_function(adder, "RolledClassConventional")	# generate a class
-        reducer = RolledClassConventional()																	# get the apply all method for the class
+        reducer = main.LazyRolledReduction.from_function(adder, "RolledClassConventional")	# generate a class
+																# get the apply all method for the class
 
     	# For testing reduction with loop unrolling (LazyUnRolledReduction) (uncomment if desired)
     	# UnRolledClassConventional = main.LazyUnrolledReduction.from_function(adder, "UnRolledClassConventional")	# generate a class
