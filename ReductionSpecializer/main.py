@@ -321,6 +321,9 @@ if __name__ == '__main__':
     # sejits_result_conventional = reducer_conventional(sample_data)              # the result of the SEJITS reduction
     conventional_reducer = LazyRolledReduction.from_function(add, "RolledClass")
     sejits_result_conventional = conventional_reducer(sample_data)
+
+    cache_reducer = LazyRolledReduction(None, "RolledClass")
+    cached_result = cache_reducer(sample_data)
     #
     # ###################################################################
     # ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
@@ -338,6 +341,7 @@ if __name__ == '__main__':
     ## Printing out the result ##
     print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
     print('SEJITS RESULT (Conventional): \t', sejits_result_conventional, " of ", type(sejits_result_conventional))
+    print('CACHED RESULT (CONVENTIONAL: \t', cached_result)
     print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
     print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
 
