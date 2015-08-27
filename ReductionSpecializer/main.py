@@ -18,7 +18,7 @@ specializer XorReduction
 
 from __future__ import print_function, division
 from ctree.jit import LazySpecializedFunction, ConcreteSpecializedFunction
-from ctree.frontend import get_ast, dump
+# from ctree.frontend import get_ast, dump
 from ctree import browser_show_ast
 from ctree.transformations import PyBasicConversions
 from ctree.nodes import CtreeNode, Project
@@ -37,6 +37,7 @@ from collections import namedtuple
 import numpy as np
 import pycl as cl
 import sys, time
+from baseline import *
 import ast
 import logging
 
@@ -304,11 +305,32 @@ def add(x, y):
 
 if __name__ == '__main__':
     ## Setup to use command-line arguments ##
-    device_num = int(sys.argv[1])                                               # gets the device number from command line args
+    device_num = int(0)                                               # gets the device number from command line args
     TARGET_GPU = devices[device_num]
 
-    WORK_GROUP_SIZE = int(sys.argv[2]) or TARGET_GPU.max_work_group_size
-    size = int(eval(sys.argv[3]))
+    WORK_GROUP_SIZE = int(32) or TARGET_GPU.max_work_group_size
+    size = 1024#int(eval(1024))
+
+
+    # # This is the test summmation...
+    # sum_kernel = lambda x, y: x + y
+    # summation_specializer = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
+    #
+    # # This is NOT a kernel... (handles the) summation portion...
+    # def array_reducer(arr):
+    #     reduced_arr = []
+    #     for sub_arr in arr:
+    #         # print sub_arr
+    #         total = summation_specializer(sub_arr) # assuming we have some sort of summation function...
+    #         reduced_arr += [total/len(sub_arr)]
+    #     return reduced_arr
+    #
+    #
+    # # Testing...
+    # test_inpt_arr = np.array([[1, 1, 1, 1, 1], [2, 2, 2, 2, 2], [3, 3, 3, 3, 3]])
+    #
+    # print ("RESULT: ", array_reducer(test_inpt_arr))
+
 
     ## Sample dataset creation ##
     sample_data = (np.ones(size)*8).astype(np.float32)                          # creating a dataset with all 8's
@@ -322,28 +344,28 @@ if __name__ == '__main__':
     conventional_reducer = LazyRolledReduction.from_function(add, "RolledClass")
     sejits_result_conventional = conventional_reducer(sample_data)
 
-    cache_reducer = LazyRolledReduction(None, "RolledClass")
-    cached_result = cache_reducer(sample_data)
-    #
-    # ###################################################################
-    # ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
-    # ###################################################################
-    sum_kernel = lambda x, y: x + y                                                         # create your lambda function
-    reducer_lambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
-    # reducer_lambda = RolledClassLambda()                                                    # create your reducer
-    sejits_result_lambda = reducer_lambda(sample_data)                                      # the result of the SEJITS reduction
-    #
-    #
-    #
-    # ## Running the control (using numpy) for testing ##
-    numpy_result = np.add.reduce(sample_data)
+    # cache_reducer = LazyRolledReduction(None, "RolledClass")
+    # cached_result = cache_reducer(sample_data)
+    # #
+    # # ###################################################################
+    # # ## EXAMPLE 2: Rolled Reduction Example (using a lambda function) ##
+    # # ###################################################################
+    # sum_kernel = lambda x, y: x + y                                                         # create your lambda function
+    # reducer_lambda = LazyRolledReduction.from_function(sum_kernel, "RolledClassLambda")  # generate subclass with the sum_kernel() lambda function we just defined
+    # # reducer_lambda = RolledClassLambda()                                                    # create your reducer
+    # sejits_result_lambda = reducer_lambda(sample_data)                                      # the result of the SEJITS reduction
+    # #
+    # #
+    # #
+    # # ## Running the control (using numpy) for testing ##
+    # numpy_result = np.add.reduce(sample_data)
 
-    ## Printing out the result ##
-    print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
+    # ## Printing out the result ##
+    # print('SEJITS RESULT (Lambda): \t', sejits_result_lambda, " of ", type(sejits_result_lambda))
     print('SEJITS RESULT (Conventional): \t', sejits_result_conventional, " of ", type(sejits_result_conventional))
-    print('CACHED RESULT (CONVENTIONAL: \t', cached_result)
-    print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
-    print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
+    # print('CACHED RESULT (CONVENTIONAL: \t', cached_result)
+    # print ('NUMPY RESULT: \t\t\t', numpy_result, " of ", type(numpy_result))
+    # print ('SUCCESS?: \t\t\t', abs(numpy_result - sejits_result_lambda) < 1e-8 and abs(numpy_result - sejits_result_conventional) < 1e-8)
 
 
 
