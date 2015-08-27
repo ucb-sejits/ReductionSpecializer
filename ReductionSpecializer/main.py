@@ -71,16 +71,27 @@ class ConcreteReduction(ConcreteSpecializedFunction):
         return self
 
     def __call__(self, A):
+        
         a = time.time()
+
+        # Initialization and copy from CPU to GPU
         output_array = np.empty(1, A.dtype)
         buf, evt = cl.buffer_from_ndarray(self.queue, A, blocking=False)
         output_buffer, output_evt = cl.buffer_from_ndarray(self.queue, output_array, blocking=False)
         
         b = time.time()
+
+        # Actual execution of the reduction.
         self._c_function(self.queue, self.kernel, buf, output_buffer)
         c = time.time()
+
+        # Copying the result back from the GPU to the CPU
         B, evt = cl.buffer_to_ndarray(self.queue, output_buffer, like=output_array)
         d = time.time()
+
+        # The true time of execution, exluding copy time is between b and c.
+        print ("True SEJITS Time (excluding copy time): {0} seconds".format(c - b))
+
         # print("overall execution:", d-a, "Initial Copy:", b-a, "Kernel execution:", c-b, "Final Copy:", d-c)
         return B[0]
 

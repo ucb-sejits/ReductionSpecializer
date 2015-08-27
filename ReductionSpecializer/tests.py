@@ -91,7 +91,7 @@ def check_test(test_value, correct_value, test_time, control_time):
 
 	num_tests += 1
 
-	test_time_string = "\t [ SEJITS: {0:.10} sec".format(test_time)
+	test_time_string = "\t [ SEJITS OpenCL (including copy): {0:.10} sec".format(test_time)
 	control_time_string = "\t|     NUMPY: {0:.10} sec ]".format(control_time)
 	time_string = test_time_string + control_time_string
 
